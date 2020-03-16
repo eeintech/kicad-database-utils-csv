@@ -23,6 +23,8 @@ class KicadLibrary(object):
 			self.library = self.OpenLibrary()
 		if self.library:
 			self.parse = self.ParseLibrary()
+		else:
+			self.parse = None
 
 	def OpenLibrary(self):
 		# Check if valid library file
@@ -46,19 +48,45 @@ class KicadLibrary(object):
 
 		# Parse Component Name
 		try:
-			name = component.name
+			parse_comp['name'] = component.name
 		except:
 			print('[ERROR] Parse: Component name not found')
 			return {}
 
-		# Parse Definitiion
-		parse_comp[name] = {'definition' : {}}
-		for key, value in component.definition.items():
-			parse_comp[name]['definition'].update({key : value})
+		# Parse Reference
+		# try:
+		# 	parse_comp['reference'] = component.definition['reference']
+		# except:
+		# 	print('[ERROR] Parse: Reference not found')
+		# 	return {}
 
-		parse_comp[name].update({'fields' : []})
-		for item in component.fields:
-			parse_comp[name]['fields'].append(item)
+		# parse_comp[name] = {'definition' : {}}
+		# for key, value in component.definition.items():
+		# 	parse_comp[name]['definition'].update({key : value})
+
+		for index, field in enumerate(component.fields):
+			if index == 0:
+				parse_comp['reference'] = field['reference'].replace('"','')
+			elif index == 1:
+				parse_comp['value'] = field['name'].replace('"','')
+			elif index == 2:
+				parse_comp['footprint'] = field['name'].replace('"','')
+			else:
+				key = 'f' + str(index)
+				if 'fieldname' in field.keys():
+					parse_comp[key + '_value'] = field['fieldname'].replace('"','')
+				else:
+					parse_comp[key + '_value'] = ''
+
+				if 'name' in field.keys():
+					parse_comp[key + '_name'] = field['name'].replace('"','')
+				else:
+					parse_comp[key + '_name'] = ''
+
+
+		# parse_comp[name].update({'fields' : []})
+		# for item in component.fields:
+		# 	parse_comp[name]['fields'].append(item)
 
 		#print(component.draw)
 
@@ -80,12 +108,12 @@ class KicadLibrary(object):
 		return parse_comp
 
 	def ParseLibrary(self):
-		parse_lib = {}
+		parse_lib = []
 		for component in self.library.components:
-			try:
-				parse_lib.update(self.ParseComponentData(component))
-			except:
-				pass
+			# try:
+			parse_lib.append(self.ParseComponentData(component))
+			# except:
+			# 	pass
 
 		return parse_lib
 
