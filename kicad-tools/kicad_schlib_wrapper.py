@@ -113,7 +113,7 @@ class KicadLibrary(object):
 			except:
 				csv_output = CSV_OUTPUT_PATH + self.name + '.csv'
 		else:
-			if not os.path.exists(csv_output):
+			if not os.path.isdir(os.path.dirname(csv_output)):
 				raise Exception(f'Path to {csv_output} does not exist')
 
 		print(f'Exporting library to {csv_output}')
