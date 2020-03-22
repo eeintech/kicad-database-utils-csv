@@ -1,9 +1,8 @@
 #!/usr/bin/env python
 import sys, os, csv
-import json, pickle
 
 # CSV DEFAULT OUTPUT FILE PATH
-CSV_OUTPUT_PATH = './libraries/'
+CSV_OUTPUT_PATH = './library_csv/'
 
 # Import KiCad schematic library utils
 try:
@@ -13,10 +12,7 @@ except:
 	sys.path.append('kicad-library-utils/schlib')
 	from schlib import SchLib
 
-def printDict(dictionary):
-	print(json.dumps(dictionary, indent = 4, sort_keys = True))
-
-# COMPONENT LIBRARY MANAGER
+# KICAD LIBRARY CLASS
 class KicadLibrary(object):
 
 	def __init__(self, file):
@@ -51,7 +47,7 @@ class KicadLibrary(object):
 
 		return components
 
-	def ParseComponentData(self, component):
+	def ParseComponent(self, component):
 		parse_comp = {}
 
 		# Parse name
@@ -63,9 +59,9 @@ class KicadLibrary(object):
 
 		# Parse documentation
 		try:
-			parse_comp['description'] = component.documentation['description']
-			parse_comp['datasheet'] = component.documentation['datasheet']
-			parse_comp['keywords'] = component.documentation['keywords']
+			parse_comp['description_doc'] = component.documentation['description']
+			parse_comp['datasheet_doc'] = component.documentation['datasheet']
+			parse_comp['keywords_doc'] = component.documentation['keywords']
 		except:
 			print('[ERROR] Parse: Component documentation not found')
 			return {}
@@ -85,24 +81,28 @@ class KicadLibrary(object):
 						fieldname = field['fieldname'].lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
 					except:
 						fieldname = field['fieldname'].lower()
+
+					# If fieldname already exist
+					if fieldname in parse_comp.keys():
+						fieldname += '_2'
+
 					if fieldname != '':
 						# Find value
 						if 'name' in field.keys():
-							parse_comp[fieldname] = field['name'].replace('"','')
+							parse_comp[fieldname] = field['name']#.replace('"','')
 						else:
 							parse_comp[fieldname] = ''
 
-		#print(component.draw)
-
+		#print(parse_comp)
 		return parse_comp
 
 	def ParseLibrary(self):
 		parse_lib = []
 		for component in self.library.components:
-			# try:
-			parse_lib.append(self.ParseComponentData(component))
-			# except:
-			# 	pass
+			try:
+				parse_lib.append(self.ParseComponent(component))
+			except:
+				pass
 
 		return parse_lib
 
@@ -112,6 +112,9 @@ class KicadLibrary(object):
 				csv_output = CSV_OUTPUT_PATH + self.name.split('.')[-2] + '.csv'
 			except:
 				csv_output = CSV_OUTPUT_PATH + self.name + '.csv'
+		else:
+			if not os.path.exists(csv_output):
+				raise Exception(f'Path to {csv_output} does not exist')
 
 		print(f'Exporting library to {csv_output}')
 
@@ -123,8 +126,6 @@ class KicadLibrary(object):
 				if key not in mapping.keys():
 					mapping[key] = key_count
 					key_count += 1
-
-		#print(mapping)
 
 		with open(csv_output, 'w') as csvfile:
 			csv_writer = csv.writer(csvfile)
@@ -150,13 +151,15 @@ class KicadLibrary(object):
 					row.append(col_value)
 					count += 1
 
-				#print(row)
 				csv_writer.writerow(row)
 
 # MAIN
 if __name__ == '__main__':
 	if len(sys.argv) > 1:
 		klib = KicadLibrary(sys.argv[1])
-		#print(klib.GetAllPartsByName())
-		#printDict(klib.parse)
-		klib.ExportToCSV()
+
+		try:
+			# User provided output file
+			klib.ExportToCSV(sys.argv[2])
+		except:
+			klib.ExportToCSV()
