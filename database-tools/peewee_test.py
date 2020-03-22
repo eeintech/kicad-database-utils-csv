@@ -29,7 +29,6 @@ class Component(Model):
 class LibraryDatabase:
 
 	def __init__(self):
-		#print('Library Database')
 		mydb.connect()
 		self.InitComponentTable()
 
@@ -41,11 +40,10 @@ class LibraryDatabase:
 			Component._meta.add_field('f' + str(index) + '_value', CharField(null = True))
 
 	def CreateTable(self, table, force_update = False):
-		#print(table._meta.table_name)
 		if force_update:
 			mydb.drop_tables([table])
 		if not mydb.table_exists(table._meta.table_name):
-			print(Component._meta.fields)
+			#print(Component._meta.fields)
 			mydb.create_tables([table])			
 
 	def AddComponentToDatabase(self, component):
@@ -82,7 +80,7 @@ if __name__ == '__main__':
 
 	if len(sys.argv) > 1:
 		# Create table if does not exists
-		mylib.CreateTable(Component)
+		mylib.CreateTable(Component, force_update = True)
 		# Load file
 		kicad_lib = KicadLibrary(sys.argv[1])
 		print(f'Adding components to database', end='')
@@ -96,7 +94,5 @@ if __name__ == '__main__':
 			mylib.AddComponentToDatabase(component)
 			count += 1
 		print('\nAll components added to database')
-
-		#mylib.WriteToDatabase(sys.argv[1], sys.argv[2])
 
 	mylib.CloseDatabase()
