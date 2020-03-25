@@ -1,5 +1,8 @@
 #!/usr/bin/env python
-import sys, os, csv
+import sys, os, csv, json
+
+### DEBUG ONLY
+LIB_SAVE = True
 
 # CSV DEFAULT OUTPUT FILE PATH
 CSV_OUTPUT_PATH = './library_csv/'
@@ -12,40 +15,98 @@ except:
 	sys.path.append('kicad-library-utils/schlib')
 	from schlib import SchLib
 
+def printDict(dictionary):
+	print()
+	print(json.dumps(dictionary, indent = 4, sort_keys = True))
+
 # KICAD LIBRARY CLASS
 class KicadLibrary(object):
 
-	def __init__(self, file):
+	def __init__(self, lib_file, csv_file = None):
 		self.version = 'kicad-library-0.1'
-		self.file = file
-		if self.file:
-			self.library = self.OpenLibrary()
-			try:
-				self.name = self.file.split('/')[-1]
-			except:
-				self.name = self.file
+		self.lib_file = lib_file
+		self.csv_file = csv_file
+		self.lib_parse = None
+		self.csv_parse = None
+
+		# Define library name
+		try:
+			self.name = self.lib_file.split('/')[-1]
+		except:
+			self.name = self.lib_file
+
+		# Process library file
+		self.library = self.OpenLibrary()
 		if self.library:
-			print(f'Parsing {self.name} library')
-			self.parse = self.ParseLibrary()
+			print(f'Library: Parsing {self.lib_file} file')
+			self.lib_parse = self.ParseLibrary()
+			#printDict(self.lib_parse)
+
+		# Process CSV file
+		if self.csv_file:
+			print(f'CSV: Parsing {self.csv_file} file')
+			self.csv_parse = self.ParseCSV()
+			#print(self.csv_parse)
+
+		# Compare both parse information and output diff
+		if self.lib_parse and self.csv_parse:
+			compare = self.CompareParse()
+
+		if not compare:
+			print('No differences found between CSV and LIB files')
 		else:
-			self.parse = None
+			printDict(compare)
+			# Update library file
+			print('Differences found.\n\nUpdating library file:')
+			self.UpdateLibraryFromCSV(compare)
 
 	def OpenLibrary(self):
+		library = None
 		# Check if valid library file
-		if not '.lib' in self.file:
-			print('Not a library file')
-			return None
+		if not '.lib' in self.lib_file:
+			print(f'[ERROR] {self.lib_file} is not a valid library file')
+			return library
 		else:
 			# Load library
-			library = SchLib(self.file)
+			try:
+				library = SchLib(self.lib_file)
+			except:
+				print(f'[ERROR] Cannot read library file {self.lib_file}')
 			return library
 
-	def GetAllPartsByName(self):
-		components = []
-		for component in self.library.components:
-			components.append(component.name)
+	def ParseCSV(self):
+		csv_db = None
+		# Check if valid CSV file
+		if not '.csv' in self.csv_file:
+			print(f'[ERROR] File {self.csv_file} is not a valid CSV')
+			return csv_db
 
-		return components
+		# Check if file exist
+		if not os.path.exists(self.csv_file):
+			print(f'[ERROR] File {self.csv_file} does not exist')
+			return csv_db
+
+		else:
+			csv_db = []
+			# Parse CSV
+			with open(self.csv_file, 'r') as csvfile:
+				csv_reader = csv.reader(csvfile)
+
+				# Process header and mapping
+				header = csv_reader.__next__()
+				mapping = {}
+				for index, item in enumerate(header):
+					mapping[index] = item
+
+				# Process component information
+				for line in csv_reader:
+					csv_parse_line = {}
+					for index, item in enumerate(line):
+						csv_parse_line[mapping[index]] = item
+					# Add to parse
+					csv_db.append(csv_parse_line)
+			
+			return csv_db
 
 	def ParseComponent(self, component):
 		parse_comp = {}
@@ -89,7 +150,7 @@ class KicadLibrary(object):
 					if fieldname != '':
 						# Find value
 						if 'name' in field.keys():
-							parse_comp[fieldname] = field['name']#.replace('"','')
+							parse_comp[fieldname] = field['name'].replace('\"','')
 						else:
 							parse_comp[fieldname] = ''
 
@@ -106,28 +167,179 @@ class KicadLibrary(object):
 
 		return parse_lib
 
-	def ExportToCSV(self, csv_output = None):
-		if not csv_output:
-			try:
-				csv_output = CSV_OUTPUT_PATH + self.name.split('.')[-2] + '.csv'
-			except:
-				csv_output = CSV_OUTPUT_PATH + self.name + '.csv'
-		else:
-			if not os.path.isdir(os.path.dirname(csv_output)):
-				raise Exception(f'Path to {csv_output} does not exist')
+	def GetCommonAndDiffKeys(self, part1, part2):
+		# Find common keys based on first part of each library file
+		common_keys = []
+		diff_keys = []
+		for key1 in part1.keys():
+			for key2 in part2.keys():
+				if key1 == key2:
+					common_keys.append(key1)
+					break
 
-		print(f'Exporting library to {csv_output}')
+			if key1 not in common_keys:
+				diff_keys.append(key1)
+
+		return common_keys, diff_keys
+
+	def CompareParse(self):
+		compare = {}
+
+		number_of_parts_to_process = max(len(self.csv_parse), len(self.lib_parse))
+		# Check that there are parts in library files
+		if not (number_of_parts_to_process > 0):
+			print(f'[ERROR] No part found in library and CSV files')
+			return compare
+		print(f'Processing compare on {number_of_parts_to_process} parts... ', end='')
+		
+		compare['part_add'] = []
+		compare['part_delete'] = []
+		compare['part_update'] = {}
+		# Find parts to delete from lib
+		for lib_part in self.lib_parse:
+			delete = True
+			for csv_part in self.csv_parse:
+				if lib_part['name'] == csv_part['name']:
+					delete = False
+					# Get common and diff keys
+					common_keys, diff_keys = self.GetCommonAndDiffKeys(csv_part, lib_part)
+					#print(f'\n\ncommon_keys = {common_keys}\ndiff_keys = {diff_keys}')
+					# Check for field discrepancies
+					for key in common_keys:
+						field_add = False
+						field_delete = False
+						field_update = False
+
+						if lib_part[key] != csv_part[key]:
+							field_update = True
+
+						if field_add or field_delete or field_update:
+							if csv_part['name'] not in compare['part_update']:
+								compare['part_update'][csv_part['name']] = {}
+
+						if field_update:
+							if 'field_update' not in compare['part_update'][csv_part['name']].keys():
+								compare['part_update'][csv_part['name']].update({'field_update': {key : csv_part[key]}})
+							else:
+								compare['part_update'][csv_part['name']]['field_update'].update({key : csv_part[key]})
+								
+					break
+			# Part not found in CSV
+			if delete:
+				compare['part_delete'].append(lib_part['name'])
+
+		# Find parts to add to lib
+		for csv_part in self.csv_parse:
+			add = True
+			for lib_part in self.lib_parse:
+				if lib_part['name'] == csv_part['name']:
+					add = False
+					break
+			# Part not found in CSV
+			if add:
+				compare['part_add'].append(csv_part['name'])
+
+		return compare
+
+	def UpdateLibraryFromCSV(self, parse_compare):
+		# Process add
+		for component_name in parse_compare['part_add']:
+			print(f'>> Adding {component_name}')
+			self.AddComponentToLibrary(component_name)
+		# Process delete
+		for component_name in parse_compare['part_delete']:
+			print(f'>> Deleting {component_name}')
+			self.RemoveComponentFromLibrary(component_name)
+		# Process update
+		for component_name in parse_compare['part_update'].keys():
+			print(f'>> Updating {component_name}')
+			self.UpdateComponentInLibrary(component_name, parse_compare['part_update'][component_name])
+
+		if LIB_SAVE:
+			self.library.save()
+
+	def AddComponentToLibrary(self, component_name):
+		print('[ERROR] Adding component to library is not supported yet')
+
+	def RemoveComponentFromLibrary(self, component_name):
+		if LIB_SAVE & False:
+			#self.library.removeComponent(component_name)
+			print('Component', component_name, 'was removed from library')
+		else:
+			print('[ERROR] Component could not be removed (protected)')
+
+	def UpdateComponentInLibrary(self, component_name, field_data):
+		for component in self.library.components:
+			if component.name == component_name:
+				for index, field in enumerate(component.fields):
+					if (index == 0) and ('reference' in field_data['field_update'].keys()):
+						component.fields[index]['name'] = field_data['field_update']['reference']
+					elif (index == 1) and ('value' in field_data['field_update'].keys()):
+						component.fields[index]['name'] = field_data['field_update']['value']
+					elif (index == 2) and ('footprint' in field_data['field_update'].keys()):
+						component.fields[index]['name'] = field_data['field_update']['footprint']
+					else:
+						if 'fieldname' in field.keys():
+							fieldname = (field['fieldname'] + '.')[:-1]
+							try:
+								fieldname = fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
+							except:
+								fieldname = fieldname.lower()
+
+							#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
+
+							for key, value in field_data['field_update'].items():
+								if fieldname == key:
+									component.fields[index]['name'] = value
+									print(f'{fieldname}: \'{component.fields[index]["name"]}\' -> \'{value}\'')		
+
+		if LIB_SAVE:
+			print('Component', component_name, 'was updated')
+		else:
+			print('[ERROR] Component could not be updated (protected)')
+
+	def GetAllPartsByName(self):
+		components = []
+		for component in self.library.components:
+			components.append(component.name)
+
+		return components
+
+	def ExportToCSV(self, csv_output = None):
+		if not self.lib_parse:
+			print('[ERROR] Library parse is empty')
+			return
+
+		# Select CSV filename and path
+		if csv_output:
+			# Check if path exist
+			if not os.path.isdir(os.path.dirname(csv_output)):
+				raise Exception(f'[ERROR] Path to {csv_output} does not exist')
+			# Use user provided CSV filename
+			csv_file = csv_output
+		else:
+			if self.csv_file:
+				# Use CSV filename defined in class
+				csv_file = self.csv_file
+			else:
+				# Use autogenerated filename
+				try:
+					csv_file = CSV_OUTPUT_PATH + self.name.split('.')[-2] + '.csv'
+				except:
+					csv_file = CSV_OUTPUT_PATH + self.name + '.csv'
+
+		print(f'Exporting library to {csv_file}')
 
 		# Check mapping from all parts
 		mapping = {}
 		key_count = 0
-		for component in self.parse:
+		for component in self.lib_parse:
 			for key in component.keys():
 				if key not in mapping.keys():
 					mapping[key] = key_count
 					key_count += 1
 
-		with open(csv_output, 'w') as csvfile:
+		with open(csv_file, 'w') as csvfile:
 			csv_writer = csv.writer(csvfile)
 			row_size = len(mapping)
 
@@ -138,7 +350,7 @@ class KicadLibrary(object):
 			csv_writer.writerow(header)
 
 			# Write line for each component
-			for component in self.parse:
+			for component in self.lib_parse:
 				row = []
 				count = 0
 				for column in range(row_size):
@@ -155,11 +367,10 @@ class KicadLibrary(object):
 
 # MAIN
 if __name__ == '__main__':
-	if len(sys.argv) > 1:
+	if len(sys.argv) > 2:
+		klib = KicadLibrary(sys.argv[1], sys.argv[2])
+		# User provided output file
+		#klib.ExportToCSV(sys.argv[2])
+	else:
 		klib = KicadLibrary(sys.argv[1])
-
-		try:
-			# User provided output file
-			klib.ExportToCSV(sys.argv[2])
-		except:
-			klib.ExportToCSV()
+		#klib.ExportToCSV()

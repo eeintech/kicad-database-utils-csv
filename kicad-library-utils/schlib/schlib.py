@@ -153,7 +153,7 @@ class Component(object):
         for line in data:
             checksum_data += line.strip()
             line = line.replace('\n', '')
-            s = shlex.shlex(line, posix=True)
+            s = shlex.shlex(line)#, posix=True)
             s.whitespace_split = True
             s.commenters = ''
             s.quotes = '"'
