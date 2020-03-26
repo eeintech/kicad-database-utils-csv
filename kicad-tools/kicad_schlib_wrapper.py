@@ -3,6 +3,8 @@ import sys, os, csv, json
 
 ### DEBUG ONLY
 LIB_SAVE = True
+ADD_ENABLE = False
+DELETE_ENABLE = False
 
 # CSV DEFAULT OUTPUT FILE PATH
 CSV_OUTPUT_PATH = './library_csv/'
@@ -46,19 +48,20 @@ class KicadLibrary(object):
 		if self.csv_file:
 			print(f'CSV: Parsing {self.csv_file} file')
 			self.csv_parse = self.ParseCSV()
-			#print(self.csv_parse)
+			#printDict(self.csv_parse)
 
 		# Compare both parse information and output diff
 		if self.lib_parse and self.csv_parse:
 			compare = self.CompareParse()
 
-		if not compare:
-			print('No differences found between CSV and LIB files')
-		else:
-			printDict(compare)
-			# Update library file
-			print('Differences found.\n\nUpdating library file:')
-			self.UpdateLibraryFromCSV(compare)
+			if not compare:
+				print('No differences found between CSV and LIB files')
+			else:
+				#printDict(compare)
+				# Update library file
+				print('Differences found.\n\nUpdating library file\n---')
+				self.UpdateLibraryFromCSV(compare)
+				print('\n---\nUpdate complete')
 
 	def OpenLibrary(self):
 		library = None
@@ -120,9 +123,11 @@ class KicadLibrary(object):
 
 		# Parse documentation
 		try:
-			parse_comp['description_doc'] = component.documentation['description']
-			parse_comp['datasheet_doc'] = component.documentation['datasheet']
-			parse_comp['keywords_doc'] = component.documentation['keywords']
+			for key, value in component.documentation.items():
+				if value != None:
+					parse_comp[key + '_doc'] = value
+				else:
+					parse_comp[key + '_doc'] = ''
 		except:
 			print('[ERROR] Parse: Component documentation not found')
 			return {}
@@ -154,7 +159,6 @@ class KicadLibrary(object):
 						else:
 							parse_comp[fieldname] = ''
 
-		#print(parse_comp)
 		return parse_comp
 
 	def ParseLibrary(self):
@@ -192,8 +196,10 @@ class KicadLibrary(object):
 			return compare
 		print(f'Processing compare on {number_of_parts_to_process} parts... ', end='')
 		
-		compare['part_add'] = []
-		compare['part_delete'] = []
+		if ADD_ENABLE:
+			compare['part_add'] = []
+		if DELETE_ENABLE:
+			compare['part_delete'] = []
 		compare['part_update'] = {}
 		# Find parts to delete from lib
 		for lib_part in self.lib_parse:
@@ -225,8 +231,9 @@ class KicadLibrary(object):
 								
 					break
 			# Part not found in CSV
-			if delete:
-				compare['part_delete'].append(lib_part['name'])
+			if DELETE_ENABLE:
+				if delete:
+					compare['part_delete'].append(lib_part['name'])
 
 		# Find parts to add to lib
 		for csv_part in self.csv_parse:
@@ -236,24 +243,33 @@ class KicadLibrary(object):
 					add = False
 					break
 			# Part not found in CSV
-			if add:
-				compare['part_add'].append(csv_part['name'])
+			if ADD_ENABLE:
+				if add:
+					compare['part_add'].append(csv_part['name'])
+
+		if not compare['part_update']:
+			compare.pop('part_update')
 
 		return compare
 
 	def UpdateLibraryFromCSV(self, parse_compare):
-		# Process add
-		for component_name in parse_compare['part_add']:
-			print(f'>> Adding {component_name}')
-			self.AddComponentToLibrary(component_name)
-		# Process delete
-		for component_name in parse_compare['part_delete']:
-			print(f'>> Deleting {component_name}')
-			self.RemoveComponentFromLibrary(component_name)
+		if ADD_ENABLE:
+			# Process add
+			for component_name in parse_compare['part_add']:
+				print(f'>> Adding {component_name}')
+				self.AddComponentToLibrary(component_name)
+		if DELETE_ENABLE:
+			# Process delete
+			for component_name in parse_compare['part_delete']:
+				print(f'>> Deleting {component_name}')
+				self.RemoveComponentFromLibrary(component_name)
 		# Process update
+		count = 0
 		for component_name in parse_compare['part_update'].keys():
-			print(f'>> Updating {component_name}')
-			self.UpdateComponentInLibrary(component_name, parse_compare['part_update'][component_name])
+			print(f'\n[U{count}]\tUpdating {component_name}\n |')
+			if self.UpdateComponentInLibrary(component_name, parse_compare['part_update'][component_name]):
+				print(f' |\n[U{count}]\tComponent {component_name} was updated')
+			count += 1
 
 		if LIB_SAVE:
 			self.library.save()
@@ -271,13 +287,36 @@ class KicadLibrary(object):
 	def UpdateComponentInLibrary(self, component_name, field_data):
 		for component in self.library.components:
 			if component.name == component_name:
+				# Process documentation
+				for key, new_value in field_data['field_update'].items():
+					if '_doc' in key[-4:]:
+						component_key = key[:-4]
+						old_value = component.documentation[component_key]
+						print(f' {key}: "{old_value}" -> "{new_value}"')
+
+						if new_value != '' and old_value != None:
+							component.documentation[component_key] = new_value
+
+				# Process fields
 				for index, field in enumerate(component.fields):
-					if (index == 0) and ('reference' in field_data['field_update'].keys()):
-						component.fields[index]['name'] = field_data['field_update']['reference']
-					elif (index == 1) and ('value' in field_data['field_update'].keys()):
-						component.fields[index]['name'] = field_data['field_update']['value']
-					elif (index == 2) and ('footprint' in field_data['field_update'].keys()):
-						component.fields[index]['name'] = field_data['field_update']['footprint']
+					if index < 3:
+						update = False
+						new_value = ''
+						for position, field in enumerate(['reference', 'value', 'footprint']):
+							if (position == index) and (field in field_data['field_update'].keys()):
+								new_value = field_data['field_update'][field]
+								update = True
+								break
+
+						if update:
+								# Reference does not have a 'name' field
+								if index > 0:
+									old_value = component.fields[index]['name']
+									print(f' {field}: "{component.fields[index]["name"]}" -> "{new_value}"')
+									component.fields[index]['name'] = new_value
+								else:
+									print(f' {field}: "{component.fields[index]["reference"]}" -> "{new_value}"')
+									component.fields[index]['reference'] = new_value
 					else:
 						if 'fieldname' in field.keys():
 							fieldname = (field['fieldname'] + '.')[:-1]
@@ -288,15 +327,17 @@ class KicadLibrary(object):
 
 							#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
 
-							for key, value in field_data['field_update'].items():
+							for key, new_value in field_data['field_update'].items():
 								if fieldname == key:
-									component.fields[index]['name'] = value
-									print(f'{fieldname}: \'{component.fields[index]["name"]}\' -> \'{value}\'')		
+									old_value = component.fields[index]["name"].replace('"','')
+									print(f' {fieldname}: "{old_value}" -> "{new_value}"')
+									component.fields[index]['name'] = new_value		
 
 		if LIB_SAVE:
-			print('Component', component_name, 'was updated')
+			return True
 		else:
 			print('[ERROR] Component could not be updated (protected)')
+			return False
 
 	def GetAllPartsByName(self):
 		components = []
@@ -373,4 +414,4 @@ if __name__ == '__main__':
 		#klib.ExportToCSV(sys.argv[2])
 	else:
 		klib = KicadLibrary(sys.argv[1])
-		#klib.ExportToCSV()
+		klib.ExportToCSV()
