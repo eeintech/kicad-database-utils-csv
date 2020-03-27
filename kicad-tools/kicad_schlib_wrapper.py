@@ -147,16 +147,16 @@ class KicadLibrary(object):
 					except:
 						fieldname = field['fieldname'].lower()
 
-					# If fieldname already exist
-					if fieldname in parse_comp.keys():
-						fieldname += '_2'
+				# If fieldname already exist
+				if fieldname in parse_comp.keys():
+					fieldname += '_2'
 
-					if fieldname != '':
-						# Find value
-						if 'name' in field.keys():
-							parse_comp[fieldname] = field['name']
-						else:
-							parse_comp[fieldname] = ''
+				if fieldname != '':
+					# Find value
+					if 'name' in field.keys():
+						parse_comp[fieldname] = field['name']
+					else:
+						parse_comp[fieldname] = ''
 
 		return parse_comp
 
