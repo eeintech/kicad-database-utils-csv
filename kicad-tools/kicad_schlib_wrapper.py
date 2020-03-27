@@ -135,14 +135,13 @@ class KicadLibrary(object):
 		# Parse fields
 		for index, field in enumerate(component.fields):
 			if index == 0:
-				parse_comp['reference'] = field['reference'].replace('"','')
-				#parse_comp['reference'] = component.definition['reference']
-			elif index == 1:
-				parse_comp['value'] = field['name'].replace('"','')
-			elif index == 2:
-				parse_comp['footprint'] = field['name'].replace('"','')
+				parse_comp['reference'] = field['reference']
 			else:
-				if 'fieldname' in field.keys():
+				if index == 1:
+					fieldname = 'value'
+				elif index == 2:
+					fieldname = 'footprint'
+				else:
 					try:
 						fieldname = field['fieldname'].lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
 					except:
@@ -155,7 +154,7 @@ class KicadLibrary(object):
 					if fieldname != '':
 						# Find value
 						if 'name' in field.keys():
-							parse_comp[fieldname] = field['name'].replace('\"','')
+							parse_comp[fieldname] = field['name']
 						else:
 							parse_comp[fieldname] = ''
 
@@ -267,8 +266,7 @@ class KicadLibrary(object):
 		count = 0
 		for component_name in parse_compare['part_update'].keys():
 			print(f'\n[U{count}]\tUpdating {component_name}\n |')
-			if self.UpdateComponentInLibrary(component_name, parse_compare['part_update'][component_name]):
-				print(f' |\n[U{count}]\tComponent {component_name} was updated')
+			self.UpdateComponentInLibrary(component_name, parse_compare['part_update'][component_name])
 			count += 1
 
 		if LIB_SAVE:
@@ -285,53 +283,47 @@ class KicadLibrary(object):
 			print('[ERROR] Component could not be removed (protected)')
 
 	def UpdateComponentInLibrary(self, component_name, field_data):
-		for component in self.library.components:
-			if component.name == component_name:
-				# Process documentation
+		component = self.library.getComponentByName(component_name)
+		# Process documentation
+		for key, new_value in field_data['field_update'].items():
+			if '_doc' in key[-4:]:
+				component_key = key[:-4]
+				old_value = component.documentation[component_key]
+				print(f' {key}: "{old_value}" -> "{new_value}"')
+
+				if new_value != '' and old_value != None:
+					component.documentation[component_key] = new_value
+
+		# Process fields
+		for index, field in enumerate(component.fields):
+			if index == 0:
+				# Reference line does not have fieldname key
+				# It needs to be handled separately
+				if 'reference' in field_data['field_update'].keys():
+					old_value = component.fields[index]['reference']
+					new_value = field_data['field_update']['reference']
+					print(f' reference: {old_value} -> {new_value}')
+					component.fields[index]['reference'] = new_value	
+			else:
+				if index == 1:
+					fieldname = 'value'
+				elif index == 2:
+					fieldname = 'footprint'
+				else:
+					# User field
+					fieldname = (field['fieldname'] + '.')[:-1]
+					try:
+						fieldname = fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
+					except:
+						fieldname = fieldname.lower()
+
+				#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
+
 				for key, new_value in field_data['field_update'].items():
-					if '_doc' in key[-4:]:
-						component_key = key[:-4]
-						old_value = component.documentation[component_key]
-						print(f' {key}: "{old_value}" -> "{new_value}"')
-
-						if new_value != '' and old_value != None:
-							component.documentation[component_key] = new_value
-
-				# Process fields
-				for index, field in enumerate(component.fields):
-					if index < 3:
-						update = False
-						new_value = ''
-						for position, field in enumerate(['reference', 'value', 'footprint']):
-							if (position == index) and (field in field_data['field_update'].keys()):
-								new_value = field_data['field_update'][field]
-								update = True
-								break
-
-						if update:
-								# Reference does not have a 'name' field
-								if index > 0:
-									old_value = component.fields[index]['name']
-									print(f' {field}: "{component.fields[index]["name"]}" -> "{new_value}"')
-									component.fields[index]['name'] = new_value
-								else:
-									print(f' {field}: "{component.fields[index]["reference"]}" -> "{new_value}"')
-									component.fields[index]['reference'] = new_value
-					else:
-						if 'fieldname' in field.keys():
-							fieldname = (field['fieldname'] + '.')[:-1]
-							try:
-								fieldname = fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
-							except:
-								fieldname = fieldname.lower()
-
-							#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
-
-							for key, new_value in field_data['field_update'].items():
-								if fieldname == key:
-									old_value = component.fields[index]["name"].replace('"','')
-									print(f' {fieldname}: "{old_value}" -> "{new_value}"')
-									component.fields[index]['name'] = new_value		
+					if fieldname == key:
+						old_value = component.fields[index]["name"]
+						print(f' {fieldname}: {old_value} -> {new_value}')
+						component.fields[index]['name'] = new_value		
 
 		if LIB_SAVE:
 			return True
@@ -409,9 +401,9 @@ class KicadLibrary(object):
 # MAIN
 if __name__ == '__main__':
 	if len(sys.argv) > 2:
+		# CSV provided: update library
 		klib = KicadLibrary(sys.argv[1], sys.argv[2])
-		# User provided output file
-		#klib.ExportToCSV(sys.argv[2])
 	else:
+		# No CSV: generate it
 		klib = KicadLibrary(sys.argv[1])
 		klib.ExportToCSV()
