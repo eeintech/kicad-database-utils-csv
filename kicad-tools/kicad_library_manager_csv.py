@@ -1,13 +1,16 @@
 #!/usr/bin/env python
-import sys, os, csv
+import sys, os, argparse
+import csv as csv_tool
 
 ### DEBUG ONLY
+DEBUG_MSG = True
 LIB_SAVE = True
 ADD_ENABLE = False
 DELETE_ENABLE = False
 
-# CSV DEFAULT OUTPUT FILE PATH
-CSV_OUTPUT_PATH = './Spark/libraries_csv/'
+# LIB AND CSV FILE FOLDERS
+LIB_FOLDER = None
+CSV_FOLDER = None
 
 # Import KiCad schematic library utils
 try:
@@ -25,7 +28,7 @@ def printDict(dictionary):
 # KICAD LIBRARY CLASS
 class KicadLibrary(object):
 
-	def __init__(self, lib_file, csv_file = None, silent = True):
+	def __init__(self, name = None, lib_file = None, csv_file = None, silent = True):
 		self.version = 'kicad-library-0.1'
 		self.lib_file = lib_file
 		self.csv_file = csv_file
@@ -33,47 +36,37 @@ class KicadLibrary(object):
 		self.csv_parse = None
 
 		# Define library name
-		try:
-			self.name = self.lib_file.split('/')[-1]
-		except:
-			self.name = self.lib_file
+		if not name:
+			try:
+				self.name = self.lib_file.split('/')[-1]
+			except:
+				self.name = self.lib_file
+		else:
+			self.name = name
 
 		# Process library file
-		self.library = self.OpenLibrary()
-		if self.library:
-			if not silent:
-				print(f'Library: Parsing {self.lib_file} file')
-			self.lib_parse = self.ParseLibrary()
+		if self.lib_file:
+			self.library = self.OpenLibrary()
+			if self.library:
+				if not silent:
+					print(f'Library: Parsing {self.lib_file} file')
+				self.lib_parse = self.ParseLibrary()
 			#printDict(self.lib_parse)
 
 		# Process CSV file
 		if self.csv_file:
-			if not silent:
-				print(f'CSV: Parsing {self.csv_file} file')
-			self.csv_parse = self.ParseCSV()
+			csv_check = self.CheckCSV()
+			if csv_check:
+				if not silent:
+					print(f'CSV: Parsing {self.csv_file} file')
+				self.csv_parse = self.ParseCSV()
 			#printDict(self.csv_parse)
-
-		# Compare both parse information and output diff
-		if self.lib_parse and self.csv_parse:
-			compare = self.CompareParse()
-
-			if not compare:
-				if not silent:
-					print('No differences found between CSV and LIB files')
-			else:
-				#printDict(compare)
-				# Update library file
-				if not silent:
-					print('Differences found.\n\nUpdating library file\n---')
-				self.UpdateLibraryFromCSV(compare)
-				if not silent:
-					print('\n---\nUpdate complete')
 
 	def OpenLibrary(self):
 		library = None
 		# Check if valid library file
 		if not '.lib' in self.lib_file:
-			print(f'[ERROR] {self.lib_file} is not a valid library file')
+			print(f'[ERROR] {self.lib_file} does not have a valid library file format')
 			return library
 		else:
 			# Load library
@@ -81,7 +74,36 @@ class KicadLibrary(object):
 				library = SchLib(self.lib_file)
 			except:
 				print(f'[ERROR] Cannot read library file {self.lib_file}')
+
+			if len(library.components) == 0:
+				print(f'[ERROR] Library file is empty {self.lib_file}')
+				return None
+
 			return library
+
+	def CheckCSV(self):
+		# Check if valid CSV file
+		if not '.csv' in self.csv_file:
+			print(f'[ERROR] File {self.csv_file} does not have a valid CSV file format')
+			return False
+
+		# Check if file exist
+		if not os.path.exists(self.csv_file):
+			#print(f'[ERROR] File {self.csv_file} does not exist')
+			return False
+
+		# Check if file has data
+		with open(self.csv_file, 'r') as csvfile:
+			try:
+				csv_reader = csv_tool.reader(csvfile)
+				next_line = csv_reader.__next__()
+
+				if len(next_line) == 0:
+					return False
+			except:
+				return False
+
+		return True
 
 	def ParseCSV(self, csv_input = None):
 		csv_db = None
@@ -90,40 +112,29 @@ class KicadLibrary(object):
 		if csv_input:
 			self.csv_file = csv_input
 
-		# Check if valid CSV file
-		if not '.csv' in self.csv_file:
-			print(f'[ERROR] File {self.csv_file} is not a valid CSV')
-			return csv_db
+		csv_db = []
+		# Parse CSV
+		with open(self.csv_file, 'r') as csvfile:
+			csv_reader = csv_tool.reader(csvfile)
 
-		# Check if file exist
-		if not os.path.exists(self.csv_file):
-			print(f'[ERROR] File {self.csv_file} does not exist')
-			return csv_db
+			# Process header and mapping
+			header = csv_reader.__next__()
+			mapping = {}
+			for index, item in enumerate(header):
+				mapping[index] = item
 
+			# Process component information
+			for line in csv_reader:
+				csv_parse_line = {}
+				for index, item in enumerate(line):
+					csv_parse_line[mapping[index]] = item
+				# Add to parse
+				csv_db.append(csv_parse_line)
+		
+		if csv_input:
+			self.csv_parse = csv_db
 		else:
-			csv_db = []
-			# Parse CSV
-			with open(self.csv_file, 'r') as csvfile:
-				csv_reader = csv.reader(csvfile)
-
-				# Process header and mapping
-				header = csv_reader.__next__()
-				mapping = {}
-				for index, item in enumerate(header):
-					mapping[index] = item
-
-				# Process component information
-				for line in csv_reader:
-					csv_parse_line = {}
-					for index, item in enumerate(line):
-						csv_parse_line[mapping[index]] = item
-					# Add to parse
-					csv_db.append(csv_parse_line)
-			
-			if csv_input:
-				self.csv_parse = csv_db
-			else:
-				return csv_db
+			return csv_db
 
 	def ParseComponent(self, component):
 		parse_comp = {}
@@ -265,29 +276,55 @@ class KicadLibrary(object):
 
 		return compare
 
-	def UpdateLibraryFromCSV(self, parse_compare):
+	def UpdateLibraryFromCSV(self, silent = False):
+		updated = False
+
+		if not silent:
+			print(f'\nLibrary Update:\n[1] ', end='')
+
+		# Compare both parse information and output diff
+		if self.lib_parse and self.csv_parse:
+			compare = self.CompareParse()
+
+			if not compare:
+				if not silent:
+					print('No differences found between CSV and LIB files')
+			else:
+				#printDict(compare)
+				# Update library file
+				if not silent:
+					print('Differences found.\n[2] Updating library file\n---')
+				
 		if ADD_ENABLE:
 			# Process add
-			for component_name in parse_compare['part_add']:
+			for component_name in compare['part_add']:
 				print(f'>> Adding {component_name}')
 				self.AddComponentToLibrary(component_name)
+				updated = True
+
 		if DELETE_ENABLE:
 			# Process delete
-			for component_name in parse_compare['part_delete']:
+			for component_name in compare['part_delete']:
 				print(f'>> Deleting {component_name}')
 				self.RemoveComponentFromLibrary(component_name)
+				updated = True
+
 		try:
 			# Process update
 			count = 0
-			for component_name in parse_compare['part_update'].keys():
+			for component_name in compare['part_update'].keys():
 				print(f'\n[U{count}]\tUpdating {component_name}\n |')
-				self.UpdateComponentInLibrary(component_name, parse_compare['part_update'][component_name])
+				self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
 				count += 1
+				updated = True
 		except:
 			pass
 
 		if LIB_SAVE:
-			self.library.save()
+			if updated:
+				self.library.save()
+				if not silent:
+					print('\n---\nUpdate complete')
 
 	def AddComponentToLibrary(self, component_name):
 		print('[ERROR] Adding component to library is not supported yet')
@@ -355,9 +392,9 @@ class KicadLibrary(object):
 
 		return components
 
-	def ExportToCSV(self, csv_output = None):
+	def ExportLibraryToCSV(self, csv_output = None):
 		if not self.lib_parse:
-			print('[ERROR] Library parse is empty')
+			print('[ERROR] CSV Export: Library parse is empty')
 			return
 
 		# Select CSV filename and path
@@ -374,9 +411,9 @@ class KicadLibrary(object):
 			else:
 				# Use autogenerated filename
 				try:
-					csv_file = CSV_OUTPUT_PATH + self.name.split('.')[-2] + '.csv'
+					csv_file = CSV_FOLDER + self.name.split('.')[-2] + '.csv'
 				except:
-					csv_file = CSV_OUTPUT_PATH + self.name + '.csv'
+					csv_file = CSV_FOLDER + self.name + '.csv'
 
 		print(f'Exporting library to {csv_file}')
 
@@ -390,7 +427,7 @@ class KicadLibrary(object):
 					key_count += 1
 
 		with open(csv_file, 'w') as csvfile:
-			csv_writer = csv.writer(csvfile)
+			csv_writer = csv_tool.writer(csvfile)
 			row_size = len(mapping)
 
 			# Write header
@@ -417,10 +454,111 @@ class KicadLibrary(object):
 
 # MAIN
 if __name__ == '__main__':
-	if len(sys.argv) > 2:
-		# CSV provided: update library
-		klib = KicadLibrary(lib_file=sys.argv[1], csv_file=sys.argv[2], silent=False)
+	### ARGPARSE
+	parser = argparse.ArgumentParser(description = """KiCad Symbol Library Manager (CSV version)""")
+	parser.add_argument("LIB_FOLDER",
+						help = "KiCad Symbol Library Folder (containing '.lib' files)")
+	parser.add_argument("-lib", required = False, default = "",
+						help = "KiCad Symbol Library File ('.lib')")
+	parser.add_argument("CSV_FOLDER",
+						help = "KiCad Symbol CSV Folder (containing '.csv' files)")
+	parser.add_argument("-csv", required = False, default = "",
+						help = "KiCad Symbol CSV File ('.csv')")
+	parser.add_argument("-export_csv", action='store_true',
+						help = "Export LIB file(s) as CSV file(s)")
+	parser.add_argument("-update_lib", action='store_true',
+						help = "Update LIB file(s) from CSV file(s)")
+
+	args = parser.parse_args()
+	###
+
+	# Check and store library folder
+	if args.LIB_FOLDER[-1] == '/':
+		LIB_FOLDER = args.LIB_FOLDER
 	else:
-		# No CSV: generate it
-		klib = KicadLibrary(sys.argv[1], silent=False)
-		klib.ExportToCSV()
+		LIB_FOLDER = args.LIB_FOLDER + '/'
+
+	# Check and store CSV folder
+	if args.CSV_FOLDER[-1] == '/':
+		CSV_FOLDER = args.CSV_FOLDER
+	else:
+		CSV_FOLDER = args.CSV_FOLDER + '/'
+	
+	if DEBUG_MSG:
+		print(f'lib_folder =\t{LIB_FOLDER}\ncsv_folder =\t{CSV_FOLDER}')	
+
+	lib_files = []
+	csv_files = []
+	lib_to_csv = {}
+
+	if args.lib and args.csv:
+		if args.lib:
+			# Append to library files
+			lib_files.append(args.lib)
+
+		if args.csv:
+			# Append to CSV files
+			csv_files.append(args.csv)
+	else:
+		# Find all library files in folder
+		for dirpath, folders, files in os.walk(LIB_FOLDER):
+			for file in files:
+				if '.lib' in file and file not in lib_files:
+					lib_files.append(file)
+
+		# Find all CSV files in folder
+		for dirpath, folders, files in os.walk(CSV_FOLDER):
+			for file in files:
+				if '.csv' in file and file not in csv_files:
+					csv_files.append(file)
+
+	# Match lib and csv files by name
+	for lib in lib_files:
+		try:
+			lib_name = lib.split('.')[0]
+		except:
+			lib_name = lib
+		for csv in csv_files:
+			try:
+				csv_name = csv.split('.')[0]
+			except:
+				csv_name = csv
+
+			if lib_name == csv_name:
+				lib_to_csv[lib] = csv
+				break
+
+		# Did not find match
+		if lib not in lib_to_csv:
+			lib_to_csv[lib] = ''
+
+	if DEBUG_MSG:
+		print(f'lib_files =\t{lib_files}\ncsv_files =\t{csv_files}\nlib_to_csv =\t{lib_to_csv}')	
+
+	for lib, csv in lib_to_csv.items():
+		try:
+			lib_name = lib.split(".")[0]
+		except:
+			lib_name = lib
+
+		# Append CSV file name if empty
+		if not csv:
+			csv = lib_name + '.csv'
+
+		print(f'\n[ {lib_name} ]')
+
+		# Define library instance
+		klib = KicadLibrary(name=lib_name, lib_file=LIB_FOLDER + lib, csv_file=CSV_FOLDER + csv, silent=not(DEBUG_MSG))
+
+		# Export library to CSV
+		if args.export_csv and not args.update_lib:
+			if klib.lib_parse and not klib.csv_parse:
+				klib.ExportLibraryToCSV()
+			elif klib.lib_parse and klib.csv_parse:
+				if DEBUG_MSG:
+					print(f'[ERROR] Aborting Export: CSV file aleady exist and contains data')
+
+		# Update library from CSV
+		if not args.export_csv and args.update_lib:
+			if klib.lib_parse and klib.csv_parse:
+				klib.UpdateLibraryFromCSV(silent = not(DEBUG_MSG))
