@@ -60,7 +60,7 @@ class KicadLibrary(object):
 				if not silent:
 					print(f'CSV: Parsing {self.csv_file} file')
 				self.csv_parse = self.ParseCSV()
-			#printDict(self.csv_parse)
+			# printDict(self.csv_parse)
 
 	def OpenLibrary(self):
 		library = None
@@ -89,7 +89,7 @@ class KicadLibrary(object):
 
 		# Check if file exist
 		if not os.path.exists(self.csv_file):
-			#print(f'[ERROR] File {self.csv_file} does not exist')
+			# print(f'[ERROR] File {self.csv_file} does not exist')
 			return False
 
 		# Check if file has data
@@ -233,7 +233,7 @@ class KicadLibrary(object):
 					delete = False
 					# Get common and diff keys
 					common_keys, diff_keys = self.GetCommonAndDiffKeys(csv_part, lib_part)
-					#print(f'\n\ncommon_keys = {common_keys}\ndiff_keys = {diff_keys}')
+					# print(f'\n\ncommon_keys = {common_keys}\ndiff_keys = {diff_keys}')
 					# Check for field discrepancies
 					for key in common_keys:
 						field_add = False
@@ -252,6 +252,17 @@ class KicadLibrary(object):
 								compare['part_update'][csv_part['name']].update({'field_update': {key : csv_part[key]}})
 							else:
 								compare['part_update'][csv_part['name']]['field_update'].update({key : csv_part[key]})
+
+					# Add missing library fields
+					for key in diff_keys:
+						# Check csv field contains data and add to compare
+						if len(csv_part[key]) > 0:
+							# Add to compare
+							try:
+								compare['part_update'][csv_part['name']]['field_add'].update({key : csv_part[key]})
+							except:
+								compare['part_update'][csv_part['name']] = {}
+								compare['part_update'][csv_part['name']].update({'field_add': {key : csv_part[key]}})
 								
 					break
 			# Part not found in CSV
@@ -285,6 +296,7 @@ class KicadLibrary(object):
 		# Compare both parse information and output diff
 		if self.lib_parse and self.csv_parse:
 			compare = self.CompareParse()
+			# print(compare)
 
 			if not compare:
 				if not silent:
@@ -309,16 +321,16 @@ class KicadLibrary(object):
 				self.RemoveComponentFromLibrary(component_name)
 				updated = True
 
-		try:
-			# Process update
-			count = 0
-			for component_name in compare['part_update'].keys():
-				print(f'\n[U{count}]\tUpdating {component_name}\n |')
-				self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
-				count += 1
-				updated = True
-		except:
-			pass
+		# try:
+		# Process update
+		count = 0
+		for component_name in compare['part_update'].keys():
+			print(f'\n[U{count}]\tUpdating {component_name}\n |')
+			self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
+			count += 1
+			updated = True
+		# except:
+		# 	pass
 
 		if LIB_SAVE:
 			if updated:
@@ -338,46 +350,55 @@ class KicadLibrary(object):
 
 	def UpdateComponentInLibrary(self, component_name, field_data):
 		component = self.library.getComponentByName(component_name)
-		# Process documentation
-		for key, new_value in field_data['field_update'].items():
-			if '_doc' in key[-4:]:
-				component_key = key[:-4]
-				old_value = component.documentation[component_key]
-				print(f' {key}: "{old_value}" -> "{new_value}"')
 
-				if new_value != '' and old_value != None:
-					component.documentation[component_key] = new_value
+		if 'field_update' in field_data:
+			# Process documentation
+			for key, new_value in field_data['field_update'].items():
+				if '_doc' in key[-4:]:
+					component_key = key[:-4]
+					old_value = component.documentation[component_key]
+					print(f' {key}: "{old_value}" -> "{new_value}"')
 
-		# Process fields
-		for index, field in enumerate(component.fields):
-			if index == 0:
-				# Reference line does not have fieldname key
-				# It needs to be handled separately
-				if 'reference' in field_data['field_update'].keys():
-					old_value = component.fields[index]['reference']
-					new_value = field_data['field_update']['reference']
-					print(f' reference: {old_value} -> {new_value}')
-					component.fields[index]['reference'] = new_value	
-			else:
-				if index == 1:
-					fieldname = 'value'
-				elif index == 2:
-					fieldname = 'footprint'
+					if new_value != '' and old_value != None:
+						component.documentation[component_key] = new_value
+
+			# Process fields
+			for index, field in enumerate(component.fields):
+				if index == 0:
+					# Reference line does not have fieldname key
+					# It needs to be handled separately
+					if 'reference' in field_data['field_update'].keys():
+						old_value = component.fields[index]['reference']
+						new_value = field_data['field_update']['reference']
+						print(f' reference: {old_value} -> {new_value}')
+						component.fields[index]['reference'] = new_value	
 				else:
-					# User field
-					fieldname = (field['fieldname'] + '.')[:-1]
-					try:
-						fieldname = fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
-					except:
-						fieldname = fieldname.lower()
+					if index == 1:
+						fieldname = 'value'
+					elif index == 2:
+						fieldname = 'footprint'
+					else:
+						# User field
+						fieldname = (field['fieldname'] + '.')[:-1]
+						try:
+							fieldname = fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
+						except:
+							fieldname = fieldname.lower()
 
-				#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
+					#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
 
-				for key, new_value in field_data['field_update'].items():
-					if fieldname == key:
-						old_value = component.fields[index]["name"]
-						print(f' {fieldname}: {old_value} -> {new_value}')
-						component.fields[index]['name'] = new_value		
+					# Update field values
+					for key, new_value in field_data['field_update'].items():
+						if fieldname == key:
+							old_value = component.fields[index]["name"]
+							print(f' /\\ {fieldname}: {old_value} -> {new_value}')
+							component.fields[index]['name'] = new_value		
+
+		if 'field_add' in field_data:
+			# Add missing fields
+			for key, value in field_data['field_add'].items():
+				print(f' ++ {key}: {value}')
+				# TODO: ADD FIELD TO COMPONENT
 
 		if LIB_SAVE:
 			return True
@@ -468,6 +489,8 @@ if __name__ == '__main__':
 						help = "Export LIB file(s) as CSV file(s)")
 	parser.add_argument("-update_lib", action='store_true',
 						help = "Update LIB file(s) from CSV file(s)")
+	# parser.add_argument("-add_global_field", required = False, default = "",
+	# 					help = "Add global field to all parts in library")
 
 	args = parser.parse_args()
 	###
