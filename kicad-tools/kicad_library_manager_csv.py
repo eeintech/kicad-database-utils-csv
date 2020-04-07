@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import sys, os, argparse
+import sys, os, argparse, copy
 import csv as csv_tool
 
 ### DEBUG ONLY
@@ -34,6 +34,7 @@ class KicadLibrary(object):
 		self.csv_file = csv_file
 		self.lib_parse = None
 		self.csv_parse = None
+		self.fieldname_lookup_table = {}
 
 		# Define library name
 		if not name:
@@ -136,6 +137,10 @@ class KicadLibrary(object):
 		else:
 			return csv_db
 
+	def CleanFieldname(self, field_value):
+		# Return simple fieldname
+		return field_value.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
+
 	def ParseComponent(self, component):
 		parse_comp = {}
 
@@ -167,19 +172,24 @@ class KicadLibrary(object):
 				elif index == 2:
 					fieldname = 'footprint'
 				else:
-					try:
-						fieldname = field['fieldname'].lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
-					except:
-						fieldname = field['fieldname'].lower()
+					fieldname = self.CleanFieldname(field['fieldname'])
 
 				# If fieldname already exist
 				if fieldname in parse_comp.keys():
-					fieldname += '_2'
+					# TODO: Improve handling of multiple instance of same fieldname, if necessary
+					fieldname += '2'
 
 				if fieldname != '':
 					# Find value
 					if 'name' in field.keys():
 						parse_comp[fieldname] = field['name']
+						
+						# Append to lookup table
+						try:
+							if field['fieldname']:
+								self.fieldname_lookup_table[fieldname] = field['fieldname']
+						except:
+							pass
 					else:
 						parse_comp[fieldname] = ''
 
@@ -380,10 +390,7 @@ class KicadLibrary(object):
 					else:
 						# User field
 						fieldname = (field['fieldname'] + '.')[:-1]
-						try:
-							fieldname = fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
-						except:
-							fieldname = fieldname.lower()
+						fieldname = self.CleanFieldname(fieldname)
 
 					#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
 
@@ -394,11 +401,28 @@ class KicadLibrary(object):
 							print(f' /\\ {fieldname}: {old_value} -> {new_value}')
 							component.fields[index]['name'] = new_value		
 
+		# Retrieve last field position
+		index = len(component.fields)
 		if 'field_add' in field_data:
 			# Add missing fields
 			for key, value in field_data['field_add'].items():
-				print(f' ++ {key}: {value}')
-				# TODO: ADD FIELD TO COMPONENT
+				print(f' ++ {key}: {value}', end='')
+				
+				try:
+					# Deep copy previous field (dict)
+					new_field = copy.deepcopy(component.fields[index - 1])
+					# All properties from the previous field will be kept except for name, value and Y position
+					new_field['name'] = value
+					new_field['fieldname'] = self.fieldname_lookup_table[key]
+					new_field['posy'] = str(int(new_field['posy']) - 200)
+					# Add to component's fields
+					component.fields.append(new_field)
+					print('\t> Successfully added')
+					# Increment index
+					index += 1
+				except:
+					print('\t> [ERROR] Field could not be added')
+
 
 		if LIB_SAVE:
 			return True
@@ -585,3 +609,4 @@ if __name__ == '__main__':
 		if not args.export_csv and args.update_lib:
 			if klib.lib_parse and klib.csv_parse:
 				klib.UpdateLibraryFromCSV(silent = not(DEBUG_MSG))
+				# print(klib.fieldname_lookup_table)
