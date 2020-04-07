@@ -12,6 +12,9 @@ DELETE_ENABLE = False
 LIB_FOLDER = None
 CSV_FOLDER = None
 
+# NEW COMPONENT FIELDS
+POSY_OFFSET = -100
+
 # Import KiCad schematic library utils
 try:
 	from schlib import SchLib
@@ -122,7 +125,9 @@ class KicadLibrary(object):
 			header = csv_reader.__next__()
 			mapping = {}
 			for index, item in enumerate(header):
-				mapping[index] = item
+				mapping[index] = self.CleanFieldname(item)
+				if item not in self.fieldname_lookup_table.keys():
+					self.fieldname_lookup_table[mapping[index]] = '"' + self.RestoreFieldname(mapping[index]) + '"'
 
 			# Process component information
 			for line in csv_reader:
@@ -137,9 +142,34 @@ class KicadLibrary(object):
 		else:
 			return csv_db
 
-	def CleanFieldname(self, field_value):
+	def CleanFieldname(self, fieldname):
 		# Return simple fieldname
-		return field_value.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
+		return fieldname.lower().replace('"','').replace(' ','_').replace('(','').replace(')','')
+
+	def RestoreFieldname(self, fieldname):
+		# Build field name
+		new_field_name = []
+		fieldname_restored = ''
+		# Split user field name
+		if '_' in fieldname:
+			new_field_name = fieldname.split('_')
+		elif ' ' in fieldname:
+			new_field_name = fieldname.split(' ')
+		else:
+			new_field_name.append(fieldname)
+
+		for index, word in enumerate(new_field_name):
+			# Capitalize first letter of each word
+			new_field_name[index] = word[0].upper() +  word[1:]
+			# Add whitespace
+			if (index + 1) < len(new_field_name):
+				new_field_name[index] += ' '
+
+		for word in new_field_name:
+			fieldname_restored += word
+
+		# print(fieldname_restored)
+		return fieldname_restored
 
 	def ParseComponent(self, component):
 		parse_comp = {}
@@ -187,7 +217,7 @@ class KicadLibrary(object):
 						# Append to lookup table
 						try:
 							if field['fieldname']:
-								self.fieldname_lookup_table[fieldname] = field['fieldname']
+								self.fieldname_lookup_table[fieldname] = '"' + self.RestoreFieldname(mapping[index]) + '"'
 						except:
 							pass
 					else:
@@ -218,6 +248,10 @@ class KicadLibrary(object):
 			if key1 not in common_keys:
 				diff_keys.append(key1)
 
+		for key2 in part2.keys():
+			if key2 not in part1.keys():
+				diff_keys.append(key2)
+
 		return common_keys, diff_keys
 
 	def CompareParse(self):
@@ -246,35 +280,61 @@ class KicadLibrary(object):
 					# print(f'\n\ncommon_keys = {common_keys}\ndiff_keys = {diff_keys}')
 					# Check for field discrepancies
 					for key in common_keys:
-						field_add = False
+						# field_add = False
 						field_delete = False
 						field_update = False
 
-						if lib_part[key] != csv_part[key]:
-							field_update = True
+						if lib_part[key]:
+							# CSV field exists and fields are different
+							if lib_part[key] != csv_part[key] and csv_part[key]:
+								field_update = True
 
-						if field_add or field_delete or field_update:
-							if csv_part['name'] not in compare['part_update']:
-								compare['part_update'][csv_part['name']] = {}
+							# Handle case where the CSV sheet does not have double-quotes (intention is to delete field from component)
+							#if lib_part[key] == '""' and not csv_part[key]:
+							if not csv_part[key]:
+								field_delete = True
 
 						if field_update:
-							if 'field_update' not in compare['part_update'][csv_part['name']].keys():
+							try:
 								compare['part_update'][csv_part['name']].update({'field_update': {key : csv_part[key]}})
-							else:
-								compare['part_update'][csv_part['name']]['field_update'].update({key : csv_part[key]})
+							except:
+								if csv_part['name'] not in compare['part_update'].keys():
+									compare['part_update'][csv_part['name']] = {}
+								compare['part_update'][csv_part['name']].update({'field_update': {key : csv_part[key]}})
+
+						if field_delete:
+							try:
+								compare['part_update'][csv_part['name']]['field_delete'].update({key : lib_part[key]})
+							except:
+								if csv_part['name'] not in compare['part_update'].keys():
+									compare['part_update'][csv_part['name']] = {}
+								compare['part_update'][csv_part['name']].update({'field_delete': {key : lib_part[key]}})
 
 					# Add missing library fields
 					for key in diff_keys:
-						# Check csv field contains data and add to compare
-						if len(csv_part[key]) > 0:
+						# Check csv field contains new fields and add to compare
+						if key not in lib_part and key in csv_part:
+							if len(csv_part[key]) > 0:
+								# Add to compare
+								try:
+									compare['part_update'][csv_part['name']]['field_add'].update({key : csv_part[key]})
+								except:
+									if csv_part['name'] not in compare['part_update'].keys():
+										compare['part_update'][csv_part['name']] = {}
+									compare['part_update'][csv_part['name']].update({'field_add': {key : csv_part[key]}})
+
+						# Check if field was removed from CSV part
+						if key in lib_part and key not in csv_part:
 							# Add to compare
 							try:
-								compare['part_update'][csv_part['name']]['field_add'].update({key : csv_part[key]})
+								compare['part_update'][csv_part['name']]['field_delete'].update({key : lib_part[key]})
 							except:
-								compare['part_update'][csv_part['name']] = {}
-								compare['part_update'][csv_part['name']].update({'field_add': {key : csv_part[key]}})
+								if csv_part['name'] not in compare['part_update'].keys():
+									compare['part_update'][csv_part['name']] = {}
+								compare['part_update'][csv_part['name']].update({'field_delete': {key : lib_part[key]}})
 								
 					break
+
 			# Part not found in CSV
 			if DELETE_ENABLE:
 				if delete:
@@ -331,22 +391,24 @@ class KicadLibrary(object):
 				self.RemoveComponentFromLibrary(component_name)
 				updated = True
 
-		# try:
-		# Process update
-		count = 0
-		for component_name in compare['part_update'].keys():
-			print(f'\n[U{count}]\tUpdating {component_name}\n |')
-			self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
-			count += 1
-			updated = True
-		# except:
-		# 	pass
+		try:
+			# Process update
+			if 'part_update' in compare:
+				count = 0
+				for component_name in compare['part_update'].keys():
+					print(f'\n[U{count}]\tUpdating {component_name}\n |')
+					self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
+					count += 1
+					updated = True
+		except:
+			print('[ERROR] Could not update library part')
+			pass
 
-		if LIB_SAVE:
-			if updated:
-				self.library.save()
-				if not silent:
-					print('\n---\nUpdate complete')
+		if updated and LIB_SAVE:
+			self.library.save()
+		
+		if updated and not silent:
+			print('\n---\nUpdate complete')
 
 	def AddComponentToLibrary(self, component_name):
 		print('[ERROR] Adding component to library is not supported yet')
@@ -388,41 +450,91 @@ class KicadLibrary(object):
 					elif index == 2:
 						fieldname = 'footprint'
 					else:
-						# User field
+						# Create string copy before altering
 						fieldname = (field['fieldname'] + '.')[:-1]
 						fieldname = self.CleanFieldname(fieldname)
 
-					#print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
+					# print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
 
 					# Update field values
-					for key, new_value in field_data['field_update'].items():
-						if fieldname == key:
-							old_value = component.fields[index]["name"]
-							print(f' /\\ {fieldname}: {old_value} -> {new_value}')
-							component.fields[index]['name'] = new_value		
+					if fieldname in field_data['field_update'].keys():
+						old_value = component.fields[index]["name"]
+						new_value = field_data['field_update'][fieldname]	
+						try:
+							print(f'(F.upd) {self.fieldname_lookup_table[fieldname]} : {old_value} -> {new_value}')
+						except:
+							print(f'(F.upd) \"{fieldname}\" : {old_value} -> {new_value}')
+						try:
+							component.fields[index]['name'] = new_value
+							# print('\t> Successfully updated')
+						except:
+							print('\t> [ERROR] Field could not be updated')
 
 		# Retrieve last field position
 		index = len(component.fields)
+		# Add missing fields from lib
 		if 'field_add' in field_data:
-			# Add missing fields
 			for key, value in field_data['field_add'].items():
-				print(f' ++ {key}: {value}', end='')
+				try:
+					print(f'(F.add) {self.fieldname_lookup_table[key]} : {value}')
+				except:
+					print(f'(F.add) \"{key}\" : {value}')
 				
 				try:
 					# Deep copy previous field (dict)
 					new_field = copy.deepcopy(component.fields[index - 1])
 					# All properties from the previous field will be kept except for name, value and Y position
 					new_field['name'] = value
-					new_field['fieldname'] = self.fieldname_lookup_table[key]
-					new_field['posy'] = str(int(new_field['posy']) - 200)
+					# Check if fieldname already exist in library
+					if key in self.fieldname_lookup_table.keys():
+						# Fetch field name
+						new_field['fieldname'] = self.fieldname_lookup_table[key]
+					else:
+						new_field['fieldname'] = self.RestoreFieldname(key)
+
+						# Add double-quotes
+						new_field['fieldname'] = '"' + new_field['fieldname'] + '"'
+
+						# print(f'New Field Name = {new_field["fieldname"]}')
+
+					new_field['posy'] = str(int(new_field['posy']) + POSY_OFFSET)
 					# Add to component's fields
 					component.fields.append(new_field)
-					print('\t> Successfully added')
+					# print('\t> Successfully added')
 					# Increment index
 					index += 1
 				except:
 					print('\t> [ERROR] Field could not be added')
 
+		# Delete extra fields from lib
+		if 'field_delete' in field_data:
+			for key, value in field_data['field_delete'].items():
+				try:
+					print(f'(F.del) {self.fieldname_lookup_table[key]}')
+				except:
+					print(f'(F.del) \"{key}\"')
+				field_index_to_delete = None
+
+				for index, field in enumerate(component.fields):
+					# Iterate over user fields only
+					if index > 2:
+						# Create string copy before altering
+						fieldname = (field['fieldname'] + '.')[:-1]
+						fieldname = self.CleanFieldname(fieldname)
+
+						if fieldname == key:
+							field_index_to_delete = index
+							break
+
+				try:
+					# Update Y position for fields present deleted index
+					for index in range(field_index_to_delete + 1, len(component.fields)):
+						component.fields[index]['posy'] = str(int(component.fields[index]['posy']) - POSY_OFFSET)
+					# Remove field
+					component.fields.pop(field_index_to_delete)
+					# print('\t> Successfully removed')
+				except:
+					print('\t> [ERROR] Field could not be removed')
 
 		if LIB_SAVE:
 			return True
@@ -560,12 +672,12 @@ if __name__ == '__main__':
 					csv_files.append(file)
 
 	# Match lib and csv files by name
-	for lib in lib_files:
+	for lib in sorted(lib_files):
 		try:
 			lib_name = lib.split('.')[0]
 		except:
 			lib_name = lib
-		for csv in csv_files:
+		for csv in sorted(csv_files):
 			try:
 				csv_name = csv.split('.')[0]
 			except:
@@ -580,7 +692,8 @@ if __name__ == '__main__':
 			lib_to_csv[lib] = ''
 
 	if DEBUG_MSG:
-		print(f'lib_files =\t{lib_files}\ncsv_files =\t{csv_files}\nlib_to_csv =\t{lib_to_csv}')	
+		print(f'lib_files =\t{sorted(lib_files)}\ncsv_files =\t{sorted(csv_files)}\nlib_to_csv =\t', end='')
+		printDict(lib_to_csv)
 
 	for lib, csv in lib_to_csv.items():
 		try:
