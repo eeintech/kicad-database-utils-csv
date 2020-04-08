@@ -1,45 +1,69 @@
 #!/usr/bin/env python
-import sys, os, argparse, copy
+import sys, os, json, argparse, copy
 import csv as csv_tool
-
-### DEBUG ONLY
-DEBUG_MSG = True
-LIB_SAVE = True
-ADD_ENABLE = False
-DELETE_ENABLE = False
-
-# LIB AND CSV FILE FOLDERS
-LIB_FOLDER = None
-CSV_FOLDER = None
-
-# NEW COMPONENT FIELDS
-POSY_OFFSET = -100
+import builtins
 
 # Import KiCad schematic library utils
 try:
+	# When library is imported
 	from schlib import SchLib
 except:
-	# When this file is executed directly
+	# When this file is executed directly from root folder
 	sys.path.append('kicad-library-utils/schlib')
 	from schlib import SchLib
 
-def printDict(dictionary):
-	import json
-	print()
-	print(json.dumps(dictionary, indent = 4, sort_keys = True))
+### DEBUG ONLY
+# Verbose if set to True
+VERBOSE = True
+# More verbose for debug
+DEBUG_DEEP = True
+# Save library file if set to True
+LIB_SAVE = True
+# Enable add component method if set to True
+ADD_ENABLE = False
+# Enable delete component method if set to True
+DELETE_ENABLE = False
 
-# KICAD LIBRARY CLASS
+### GLOBAL SETTINGS
+# Library (.lib) and CSV files folders
+LIB_FOLDER = None
+CSV_FOLDER = None
+
+# New component field offset
+POSY_OFFSET = -100
+
+# Overload print function for pretty-print of dictionaries
+def print(*args, **kwargs):
+	# Check if silent=True is set
+	try:
+		silent = kwargs.pop('silent')
+	except:
+		silent = False
+	if not silent:
+		if type(args[0]) is dict:
+			return builtins.print(json.dumps(*args, **kwargs, indent = 4, sort_keys = True))
+		else:
+			return builtins.print(*args, **kwargs)
+
+### KICAD LIBRARY CLASS
 class KicadLibrary(object):
 
 	def __init__(self, name = None, lib_file = None, csv_file = None, silent = True):
+		# Version
 		self.version = 'kicad-library-0.1'
+		# Library file name and extension (path NOT included)
 		self.lib_file = lib_file
+		# CSV file name and extension (path NOT included)
 		self.csv_file = csv_file
+		# Parsed list of library components
 		self.lib_parse = None
+		# Parsed list of csv components
 		self.csv_parse = None
+		# Store relationship between parse 'label'
+		# (space => underscores) and actual field name 
 		self.fieldname_lookup_table = {}
 
-		# Define library name
+		# Define library instance name
 		if not name:
 			try:
 				self.name = self.lib_file.split('/')[-1]
@@ -50,61 +74,64 @@ class KicadLibrary(object):
 
 		# Process library file
 		if self.lib_file:
-			self.library = self.OpenLibrary()
+			# Load library file from schlib module
+			self.library = self.LoadLibrary()
 			if self.library:
-				if not silent:
-					print(f'Library: Parsing {self.lib_file} file')
+				# Parse library file
+				print(f'Library: Parsing {self.lib_file} file', silent=silent)
 				self.lib_parse = self.ParseLibrary()
-			#printDict(self.lib_parse)
+			# print(self.lib_parse, silent=not(DEBUG_DEEP))
 
 		# Process CSV file
 		if self.csv_file:
+			# Check if file exists, has a valid format, can be read and contains data
 			csv_check = self.CheckCSV()
 			if csv_check:
-				if not silent:
-					print(f'CSV: Parsing {self.csv_file} file')
+				# Parse CSV file
+				print(f'CSV: Parsing {self.csv_file} file', silent=silent)
 				self.csv_parse = self.ParseCSV()
-			# printDict(self.csv_parse)
+			# print(self.csv_parse, silent=not(DEBUG_DEEP))
 
-	def OpenLibrary(self):
-		library = None
+	def LoadLibrary(self):
 		# Check if valid library file
 		if not '.lib' in self.lib_file:
 			print(f'[ERROR] {self.lib_file} does not have a valid library file format')
-			return library
+			return None
 		else:
-			# Load library
 			try:
+				# Load library using schlib module
 				library = SchLib(self.lib_file)
 			except:
+				library = None
 				print(f'[ERROR] Cannot read library file {self.lib_file}')
 
 			if len(library.components) == 0:
-				print(f'[ERROR] Library file is empty {self.lib_file}')
-				return None
+				print(f'[WARNING] Library file is empty {self.lib_file}')
 
 			return library
 
 	def CheckCSV(self):
+		# Check if file exists
+		if not os.path.exists(self.csv_file):
+			print(f'[ERROR]\tFile {self.csv_file} does not exists')
+			print(f'\tUse "-export_csv" argument to export CSV file')
+			return False
+
 		# Check if valid CSV file
 		if not '.csv' in self.csv_file:
 			print(f'[ERROR] File {self.csv_file} does not have a valid CSV file format')
 			return False
 
-		# Check if file exist
-		if not os.path.exists(self.csv_file):
-			# print(f'[ERROR] File {self.csv_file} does not exist')
-			return False
-
-		# Check if file has data
+		# Check if file can be read and contains data
 		with open(self.csv_file, 'r') as csvfile:
 			try:
 				csv_reader = csv_tool.reader(csvfile)
 				next_line = csv_reader.__next__()
 
 				if len(next_line) == 0:
-					return False
+					print(f'[WARNING] CSV file is empty {self.csv_file}')
 			except:
+				print(f'[ERROR] Cannot read CSV file {self.csv_file}')
 				return False
 
 		return True
@@ -222,6 +249,11 @@ class KicadLibrary(object):
 							pass
 					else:
 						parse_comp[fieldname] = ''
+				else:
+					# If also name is empty: process to delete empty user field
+					if field['name'] == '""':
+						parse_comp['empty'] = field['name']
+						# print(f'field = {component.fields[index]}')
 
 		return parse_comp
 
@@ -360,22 +392,19 @@ class KicadLibrary(object):
 	def UpdateLibraryFromCSV(self, silent = False):
 		updated = False
 
-		if not silent:
-			print(f'\nLibrary Update:\n[1] ', end='')
+		print(f'\nLibrary Update:\n[1]\t', end='', silent=silent)
 
 		# Compare both parse information and output diff
 		if self.lib_parse and self.csv_parse:
 			compare = self.CompareParse()
-			# print(compare)
+			# print(compare, silent=not(DEBUG_DEEP))
 
 			if not compare:
-				if not silent:
-					print('No differences found between CSV and LIB files')
+				# Compare report is empty (no differences between lib and csv found)
+				print('No differences found between library and CSV components', silent=silent)
 			else:
-				#printDict(compare)
 				# Update library file
-				if not silent:
-					print('Differences found.\n[2] Updating library file\n---')
+				print('Differences found\n[2]\tUpdating library file\n---', silent=silent)
 				
 		if ADD_ENABLE:
 			# Process add
@@ -391,24 +420,27 @@ class KicadLibrary(object):
 				self.RemoveComponentFromLibrary(component_name)
 				updated = True
 
-		try:
-			# Process update
-			if 'part_update' in compare:
-				count = 0
-				for component_name in compare['part_update'].keys():
-					print(f'\n[U{count}]\tUpdating {component_name}\n |')
-					self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
-					count += 1
-					updated = True
-		except:
-			print('[ERROR] Could not update library part')
-			pass
+		# try:
+		# Process update
+		if 'part_update' in compare:
+			count = 0
+			for component_name in compare['part_update'].keys():
+				print(f'\n[U{count}]\tUpdating {component_name}\n |')
+				self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
+				count += 1
+				updated = True
+		# except:
+		# 	print('[ERROR] Could not update library part')
+		# 	pass
 
 		if updated and LIB_SAVE:
 			self.library.save()
 		
-		if updated and not silent:
-			print('\n---\nUpdate complete')
+		if updated:
+			if LIB_SAVE:
+				print('\n---\nUpdate complete', silent=silent)
+		else:
+			print('\tUpdate aborted', silent=silent)
 
 	def AddComponentToLibrary(self, component_name):
 		print('[ERROR] Adding component to library is not supported yet')
@@ -422,6 +454,7 @@ class KicadLibrary(object):
 
 	def UpdateComponentInLibrary(self, component_name, field_data):
 		component = self.library.getComponentByName(component_name)
+		# print(component.fields)
 
 		if 'field_update' in field_data:
 			# Process documentation
@@ -468,43 +501,7 @@ class KicadLibrary(object):
 							component.fields[index]['name'] = new_value
 							# print('\t> Successfully updated')
 						except:
-							print('\t> [ERROR] Field could not be updated')
-
-		# Retrieve last field position
-		index = len(component.fields)
-		# Add missing fields from lib
-		if 'field_add' in field_data:
-			for key, value in field_data['field_add'].items():
-				try:
-					print(f'(F.add) {self.fieldname_lookup_table[key]} : {value}')
-				except:
-					print(f'(F.add) \"{key}\" : {value}')
-				
-				try:
-					# Deep copy previous field (dict)
-					new_field = copy.deepcopy(component.fields[index - 1])
-					# All properties from the previous field will be kept except for name, value and Y position
-					new_field['name'] = value
-					# Check if fieldname already exist in library
-					if key in self.fieldname_lookup_table.keys():
-						# Fetch field name
-						new_field['fieldname'] = self.fieldname_lookup_table[key]
-					else:
-						new_field['fieldname'] = self.RestoreFieldname(key)
-
-						# Add double-quotes
-						new_field['fieldname'] = '"' + new_field['fieldname'] + '"'
-
-						# print(f'New Field Name = {new_field["fieldname"]}')
-
-					new_field['posy'] = str(int(new_field['posy']) + POSY_OFFSET)
-					# Add to component's fields
-					component.fields.append(new_field)
-					# print('\t> Successfully added')
-					# Increment index
-					index += 1
-				except:
-					print('\t> [ERROR] Field could not be added')
+							print('\t[ERROR] Field could not be updated')
 
 		# Delete extra fields from lib
 		if 'field_delete' in field_data:
@@ -525,16 +522,64 @@ class KicadLibrary(object):
 						if fieldname == key:
 							field_index_to_delete = index
 							break
+						elif fieldname == "":
+							field_index_to_delete = index
+							break
 
 				try:
 					# Update Y position for fields present deleted index
-					for index in range(field_index_to_delete + 1, len(component.fields)):
-						component.fields[index]['posy'] = str(int(component.fields[index]['posy']) - POSY_OFFSET)
+					# for index in range(field_index_to_delete + 1, len(component.fields)):
+					# 	component.fields[index]['posy'] = str(float(component.fields[index]['posy']) + POSY_OFFSET)
 					# Remove field
+					# print(component.fields[field_index_to_delete])
 					component.fields.pop(field_index_to_delete)
 					# print('\t> Successfully removed')
 				except:
-					print('\t> [ERROR] Field could not be removed')
+					print('\t[ERROR] Field could not be removed')
+
+		# Retrieve last field position
+		index = len(component.fields)
+		# Add missing fields from lib
+		if 'field_add' in field_data:
+			for key, value in field_data['field_add'].items():
+				try:
+					print(f'(F.add) {self.fieldname_lookup_table[key]} : {value}')
+				except:
+					print(f'(F.add) \"{key}\" : {value}')
+				
+				try:
+					# Deep copy previous field (dict)
+					new_field = copy.deepcopy(component.fields[index - 1])
+					# All properties from the previous field will be kept except for name, value, Y position and visibility
+					new_field['name'] = value
+					# Check if fieldname already exist in library
+					if key in self.fieldname_lookup_table.keys():
+						# Fetch field name
+						new_field['fieldname'] = self.fieldname_lookup_table[key]
+					else:
+						new_field['fieldname'] = self.RestoreFieldname(key)
+
+						# Add double-quotes
+						new_field['fieldname'] = '"' + new_field['fieldname'] + '"'
+
+						# print(f'New Field Name = {new_field["fieldname"]}')
+
+					# Find user fields Y positions
+					posy = []
+					for posy_idx in range(0, len(component.fields)):
+						posy.append(int(component.fields[posy_idx]['posy']))
+
+					# Set the new field below the lowest one
+					new_field['posy'] = str(min(posy) + POSY_OFFSET)
+					# Set the visibility to hidden
+					new_field['visibility'] = 'I'
+					# Add to component's fields
+					component.fields.append(new_field)
+					# print('\t> Successfully added')
+					# Increment index
+					index += 1
+				except:
+					print('\t[ERROR] Field could not be added')
 
 		if LIB_SAVE:
 			return True
@@ -643,8 +688,7 @@ if __name__ == '__main__':
 	else:
 		CSV_FOLDER = args.CSV_FOLDER + '/'
 	
-	if DEBUG_MSG:
-		print(f'lib_folder =\t{LIB_FOLDER}\ncsv_folder =\t{CSV_FOLDER}')	
+	print(f'lib_folder =\t{LIB_FOLDER}\ncsv_folder =\t{CSV_FOLDER}', silent=not(VERBOSE))	
 
 	lib_files = []
 	csv_files = []
@@ -691,9 +735,8 @@ if __name__ == '__main__':
 		if lib not in lib_to_csv:
 			lib_to_csv[lib] = ''
 
-	if DEBUG_MSG:
-		print(f'lib_files =\t{sorted(lib_files)}\ncsv_files =\t{sorted(csv_files)}\nlib_to_csv =\t', end='')
-		printDict(lib_to_csv)
+	print(f'lib_files =\t{sorted(lib_files)}\ncsv_files =\t{sorted(csv_files)}\nlib_to_csv =\n', end='', silent=not(VERBOSE))
+	print(lib_to_csv, silent=not(VERBOSE))
 
 	for lib, csv in lib_to_csv.items():
 		try:
@@ -708,18 +751,17 @@ if __name__ == '__main__':
 		print(f'\n[ {lib_name} ]')
 
 		# Define library instance
-		klib = KicadLibrary(name=lib_name, lib_file=LIB_FOLDER + lib, csv_file=CSV_FOLDER + csv, silent=not(DEBUG_MSG))
+		klib = KicadLibrary(name=lib_name, lib_file=LIB_FOLDER + lib, csv_file=CSV_FOLDER + csv, silent=not(VERBOSE))
 
 		# Export library to CSV
 		if args.export_csv and not args.update_lib:
 			if klib.lib_parse and not klib.csv_parse:
 				klib.ExportLibraryToCSV()
 			elif klib.lib_parse and klib.csv_parse:
-				if DEBUG_MSG:
-					print(f'[ERROR] Aborting Export: CSV file aleady exist and contains data')
+				print(f'[ERROR] Aborting Export: CSV file aleady exist and contains data', silent=not(VERBOSE))
 
 		# Update library from CSV
 		if not args.export_csv and args.update_lib:
 			if klib.lib_parse and klib.csv_parse:
-				klib.UpdateLibraryFromCSV(silent = not(DEBUG_MSG))
-				# print(klib.fieldname_lookup_table)
+				klib.UpdateLibraryFromCSV(silent = not(VERBOSE))
+				# print(klib.fieldname_lookup_table, silent=not(DEBUG_DEEP))
