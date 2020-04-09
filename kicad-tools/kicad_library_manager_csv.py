@@ -261,7 +261,10 @@ class KicadLibrary(object):
 				# If fieldname already exist
 				if fieldname in parse_comp.keys():
 					# TODO: Improve handling of multiple instance of same fieldname, if necessary
-					fieldname += '2'
+					if fieldname[-1].isdigit():
+						fieldname = fieldname[:-1] + str(int(fieldname[-1] + 1))
+					else:
+						fieldname += '2'
 
 				if fieldname != '':
 					# Find value
@@ -459,7 +462,7 @@ class KicadLibrary(object):
 		if 'part_update' in compare:
 			count = 0
 			for component_name in compare['part_update'].keys():
-				print(f'\n[U{count} :\t{component_name} ]')
+				print(f'\n[ U{count} :\t{component_name} ]')
 				self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
 				count += 1
 				updated = True
@@ -629,7 +632,7 @@ class KicadLibrary(object):
 
 		return components
 
-	def ExportLibraryToCSV(self, csv_output = None):
+	def ExportLibraryToCSV(self, csv_output = None, silent = False):
 		if not self.lib_parse:
 			print('[ERROR]\tCSV Export: Library parse is empty')
 			return
@@ -652,7 +655,7 @@ class KicadLibrary(object):
 				except:
 					csv_file = CSV_FOLDER + self.name + '.csv'
 
-		print(f'(CSV)\tExporting library to {csv_file}')
+		print(f'(CSV)\tExporting library to {csv_file}', silent=silent)
 
 		# Check mapping from all parts
 		mapping = {}
@@ -722,8 +725,12 @@ if __name__ == '__main__':
 						help = "Export LIB file(s) as CSV file(s)")
 	parser.add_argument("-update_lib", action='store_true',
 						help = "Update LIB file(s) from CSV file(s)")
-	# parser.add_argument("-add_global_field", required = False, default = "",
-	# 					help = "Add global field to all parts in library")
+	parser.add_argument("-force_write", action='store_true',
+						help = "Overwrite for LIB and CSV files")
+	parser.add_argument("-add_global_field", required = False, default = "",
+						help = "Add global field to all components in library")
+	parser.add_argument("-global_field_default", required = False, default = "",
+						help = "Default value for global field")
 
 	args = parser.parse_args()
 	###
@@ -810,12 +817,39 @@ if __name__ == '__main__':
 				klib.ExportLibraryToCSV()
 			else:
 				# print(klib.csv_parse[33], silent=not(DEBUG_DEEP))
-				print(f'[ERROR]\tAborting Export: CSV file aleady exist and contains data', silent=not(VERBOSE))
+				if args.force_write:
+					klib.ExportLibraryToCSV()
+				else:
+					print(f'[ERROR]\tAborting Export: CSV file aleady exist and contains data', silent=not(VERBOSE))
 
 		# Update library from CSV
 		if not args.export_csv and args.update_lib:
 			if klib.lib_parse and klib.csv_parse:
 				print(klib.lib_parse[0], silent=not(DEBUG_DEEP))
 				print(klib.csv_parse[0], silent=not(DEBUG_DEEP))
+				
+				if args.add_global_field:
+					global_field = args.add_global_field.lower()
+					klib.fieldname_lookup_table[global_field] = '"' + args.add_global_field + '"'
+
+					if args.global_field_default:
+						default_value = '"' + args.global_field_default + '"'
+					else:
+						default_value = '""'
+					print(f'default value = {default_value}', silent=not(DEBUG_DEEP))
+
+					# Process all CSV parts
+					if klib.csv_parse:
+						for part in klib.csv_parse:
+							print(f'Adding {global_field} to {part["name"]}', silent=not(DEBUG_DEEP))
+							try:
+								if not part[global_field]:
+									part[global_field] = default_value
+							except:
+								part.update({global_field : default_value})
+				else:
+					if args.global_field_default:
+						print(f'[ERROR]\tMissing -add_global_field argument', silent=not(VERBOSE))
+
 				klib.UpdateLibraryFromCSV(silent = not(VERBOSE))
 				# print(klib.fieldname_lookup_table, silent=not(DEBUG_DEEP))
