@@ -23,6 +23,8 @@ LIB_SAVE = True
 ADD_ENABLE = False
 # Enable delete component method if set to True
 DELETE_ENABLE = False
+# Export empty fields to CSV if set to True
+EMPTY_EXPORT = False
 
 ### GLOBAL SETTINGS
 # Library (.lib) and CSV files folders
@@ -78,9 +80,10 @@ class KicadLibrary(object):
 			self.library = self.LoadLibrary()
 			if self.library:
 				# Parse library file
-				print(f'(LIB)\tParsing {self.lib_file} file', silent=silent)
+				print(f'(LIB)\tParsing {self.lib_file} file', end='', silent=silent)
 				self.lib_parse = self.ParseLibrary()
-			# print(self.lib_parse, silent=not(DEBUG_DEEP))
+				print(f' ({len(self.lib_parse)} components)', silent=silent)
+				print(self.lib_parse[0], silent=not(DEBUG_DEEP))
 
 		# Process CSV file
 		if self.lib_parse and self.csv_file:
@@ -88,8 +91,9 @@ class KicadLibrary(object):
 			csv_check = self.CheckCSV(export)
 			if csv_check:
 				# Parse CSV file
-				print(f'(CSV)\tParsing {self.csv_file} file', silent=silent)
+				print(f'(CSV)\tParsing {self.csv_file} file', end='', silent=silent)
 				self.csv_parse = self.ParseCSV()
+				print(f' ({len(self.csv_parse)} components)', silent=silent)
 			# print(self.csv_parse, silent=not(DEBUG_DEEP))
 
 	def LoadLibrary(self):
@@ -207,11 +211,12 @@ class KicadLibrary(object):
 			new_field_name.append(fieldname)
 
 		for index, word in enumerate(new_field_name):
-			# Capitalize first letter of each word
-			new_field_name[index] = word[0].upper() +  word[1:]
-			# Add whitespace
-			if (index + 1) < len(new_field_name):
-				new_field_name[index] += ' '
+			if word != '':
+				# Capitalize first letter of each word
+				new_field_name[index] = word[0].upper() +  word[1:]
+				# Add whitespace
+				if (index + 1) < len(new_field_name):
+					new_field_name[index] += ' '
 
 		for word in new_field_name:
 			fieldname_restored += word
@@ -221,6 +226,7 @@ class KicadLibrary(object):
 
 	def ParseComponent(self, component):
 		parse_comp = {}
+		empty_count = 0
 
 		# Parse name
 		try:
@@ -273,8 +279,13 @@ class KicadLibrary(object):
 				else:
 					# If also name is empty: process to delete empty user field
 					if field['name'] == '""':
-						parse_comp['empty'] = field['name']
-						# print(f'field = {component.fields[index]}')
+						key = ''
+						for i in range(0, empty_count + 1):
+							key += '_'
+						key += 'empty' 
+						parse_comp[key] = field['name']
+						empty_count += 1
+						# print(key, parse_comp[key])
 
 		return parse_comp
 
@@ -314,7 +325,7 @@ class KicadLibrary(object):
 		if not (len(self.csv_parse) > 0):
 			print(f'[ERROR]\tNo part found in library and CSV files')
 			return compare
-		print(f'Processing compare on {len(self.csv_parse)} parts... ', end='')
+		print(f'Processing compare on {max(len(self.csv_parse), len(self.lib_parse))} parts... ', end='')
 
 		# Copy lib_parse
 		lib_parse_remaining_components = copy.deepcopy(self.lib_parse)
@@ -589,8 +600,9 @@ class KicadLibrary(object):
 
 					# Find user fields Y positions
 					posy = []
-					for posy_idx in range(0, len(component.fields)):
-						posy.append(int(component.fields[posy_idx]['posy']))
+					for posy_idx in range(2, len(component.fields)):
+						if component.fields[posy_idx]['name'] != "":
+							posy.append(int(component.fields[posy_idx]['posy']))
 
 					# Set the new field below the lowest one
 					new_field['posy'] = str(min(posy) + POSY_OFFSET)
@@ -640,7 +652,7 @@ class KicadLibrary(object):
 				except:
 					csv_file = CSV_FOLDER + self.name + '.csv'
 
-		print(f'Exporting library to {csv_file}')
+		print(f'(CSV)\tExporting library to {csv_file}')
 
 		# Check mapping from all parts
 		mapping = {}
@@ -648,8 +660,14 @@ class KicadLibrary(object):
 		for component in self.lib_parse:
 			for key in component.keys():
 				if key not in mapping.keys():
-					mapping[key] = key_count
-					key_count += 1
+					if 'empty' in key:
+						# Do not export empty fields if EMPTY_EXPORT set to False
+						if EMPTY_EXPORT:
+							mapping[key] = key_count
+							key_count += 1
+					else:
+						mapping[key] = key_count
+						key_count += 1					
 
 		with open(csv_file, 'w') as csvfile:
 			# Double-quotes (quotechar) are doubled. It does not look "pretty" when
@@ -671,16 +689,17 @@ class KicadLibrary(object):
 				for column in range(row_size):
 					col_value = ''
 					for key, value in component.items():
-						if mapping[key] == count:
-							# Check if value has leading 0 and is only numeric
-							# Excel and other tools treat it as number and remove leading 0
-							try:
-								if value[0] == '0' and value.isdigit():
-									value = '\'' + value
-							except:
-								pass
-							col_value = value
-							break
+						if key in mapping:
+							if mapping[key] == count:
+								# Check if value has leading 0 and is only numeric
+								# Excel and other tools treat it as number and remove leading 0
+								try:
+									if value[0] == '0' and value.isdigit():
+										value = '\'' + value
+								except:
+									pass
+								col_value = value
+								break
 
 					row.append(col_value)
 					count += 1
