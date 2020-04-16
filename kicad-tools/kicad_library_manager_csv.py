@@ -16,7 +16,7 @@ except:
 # Verbose if set to True
 VERBOSE = True
 # More verbose for debug
-DEBUG_DEEP = True
+DEBUG_DEEP = False
 # Save library file if set to True
 LIB_SAVE = True
 # Enable add component method if set to True
