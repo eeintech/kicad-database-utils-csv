@@ -16,7 +16,7 @@ except:
 # Verbose if set to True
 VERBOSE = True
 # More verbose for debug
-DEBUG_DEEP = False
+DEBUG_DEEP = True
 # Save library file if set to True
 LIB_SAVE = True
 # Enable add component method if set to True
@@ -83,7 +83,7 @@ class KicadLibrary(object):
 				print(f'(LIB)\tParsing {self.lib_file} file', end='', silent=silent)
 				self.lib_parse = self.ParseLibrary()
 				print(f' ({len(self.lib_parse)} components)', silent=silent)
-				print(self.lib_parse[0], silent=not(DEBUG_DEEP))
+				# print(self.lib_parse[0], silent=not(DEBUG_DEEP))
 
 		# Process CSV file
 		if self.lib_parse and self.csv_file:
@@ -753,42 +753,55 @@ if __name__ == '__main__':
 	csv_files = []
 	lib_to_csv = {}
 
-	if args.lib and args.csv:
-		if args.lib:
-			# Append to library files
-			lib_files.append(args.lib)
-
-		if args.csv:
-			# Append to CSV files
-			csv_files.append(args.csv)
+	if args.lib:
+		# Append to library files
+		lib_files.append(args.lib)
 	else:
 		# Find all library files in folder
 		for dirpath, folders, files in os.walk(LIB_FOLDER):
 			for file in files:
 				if '.lib' in file and file not in lib_files:
 					lib_files.append(file)
-
+			
+	if args.csv:
+		# Append to CSV files
+		csv_files.append(args.csv)
+	else:
 		# Find all CSV files in folder
 		for dirpath, folders, files in os.walk(CSV_FOLDER):
 			for file in files:
 				if '.csv' in file and file not in csv_files:
 					csv_files.append(file)
 
-	# Match lib and csv files by name
-	for lib in sorted(lib_files):
-		try:
-			lib_name = lib.split('.')[0]
-		except:
-			lib_name = lib
-		for csv in sorted(csv_files):
+	# If either lib file or csv file is specified by user
+	# Require unique match
+	if args.lib or args.csv:
+		if (len(lib_files) + len(csv_files)) > 2:
+			print(f'[ERROR]\tLIB and CSV files could not be matched', silent=False)
+			print(f'\t\tMake sure both -lib and -csv files are correct or that folders contain unique file', silent=False)
+			exit(-1)
+		else:
 			try:
-				csv_name = csv.split('.')[0]
+				lib_to_csv[lib_files[0]] = csv_files[0]
 			except:
-				csv_name = csv
+				print(f'[ERROR]\tMissing LIB and CSV file', silent=False)
+				exit(-1)
+	else:
+		# Match lib and csv files by name
+		for lib in sorted(lib_files):
+			try:
+				lib_name = lib.split('.')[0]
+			except:
+				lib_name = lib
+			for csv in sorted(csv_files):
+				try:
+					csv_name = csv.split('.')[0]
+				except:
+					csv_name = csv
 
-			if lib_name == csv_name:
-				lib_to_csv[lib] = csv
-				break
+				if lib_name == csv_name:
+					lib_to_csv[lib] = csv
+					break
 
 		# Did not find match
 		if lib not in lib_to_csv:
@@ -825,8 +838,8 @@ if __name__ == '__main__':
 		# Update library from CSV
 		if not args.export_csv and args.update_lib:
 			if klib.lib_parse and klib.csv_parse:
-				print(klib.lib_parse[0], silent=not(DEBUG_DEEP))
-				print(klib.csv_parse[0], silent=not(DEBUG_DEEP))
+				# print(klib.lib_parse[0], silent=not(DEBUG_DEEP))
+				# print(klib.csv_parse[0], silent=not(DEBUG_DEEP))
 				
 				if args.add_global_field:
 					global_field = args.add_global_field.lower()
