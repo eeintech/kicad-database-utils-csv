@@ -386,7 +386,7 @@ class KicadLibrary(object):
 
 						if field_update:
 							try:
-								compare['part_update'][csv_part['name']].update({'field_update': {key : csv_part[key]}})
+								compare['part_update'][csv_part['name']]['field_update'].update({key : csv_part[key]})
 							except:
 								if csv_part['name'] not in compare['part_update'].keys():
 									compare['part_update'][csv_part['name']] = {}
@@ -587,7 +587,7 @@ class KicadLibrary(object):
 				if '_doc' in key[-4:]:
 					component_key = key[:-4]
 					old_value = component.documentation[component_key]
-					print(f' {key}: "{old_value}" -> "{new_value}"')
+					print(f'(F.upd) {key}: "{old_value}" -> "{new_value}"')
 
 					if new_value != '' and old_value != None:
 						component.documentation[component_key] = new_value
