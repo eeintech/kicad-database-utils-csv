@@ -341,14 +341,14 @@ class KicadLibrary(object):
 
 		return common_keys, diff_keys
 
-	def CompareParse(self):
+	def CompareParse(self, silent = False):
 		compare = {}
 
 		# Check that there are parts in library files
 		if not (len(self.csv_parse) > 0):
 			print(f'[ERROR]\tNo part found in library and CSV files')
 			return compare
-		print(f'Processing compare on {max(len(self.csv_parse), len(self.lib_parse))} parts... ', end='')
+		print(f'Processing compare on {max(len(self.csv_parse), len(self.lib_parse))} parts... ', end='', silent = silent)
 
 		# Copy lib_parse
 		lib_parse_remaining_components = copy.deepcopy(self.lib_parse)
@@ -445,15 +445,31 @@ class KicadLibrary(object):
 
 		
 		# Simplify compare report
-		if 'part_add' in compare:
-			if not compare['part_add']:
-				compare.pop('part_add')
-		if 'part_delete' in compare:
-			if not compare['part_delete']:
-				compare.pop('part_delete')
-		if 'part_update' in compare:
-			if not compare['part_update']:
-				compare.pop('part_update')
+		if not compare['part_add']:
+			compare.pop('part_add')
+		if not compare['part_delete']:
+			compare.pop('part_delete')
+
+		# Check for potential component updates
+		if ADD_ENABLE and DELETE_ENABLE:
+			compare['part_replace'] = {}
+			if 'part_add' in compare and 'part_delete' in compare:
+				for component_add in compare['part_add']:
+					for component_del in compare['part_delete']:
+						
+						csv_index = self.GetComponentIndexByName(component_add)[1]
+						lib_index = self.GetComponentIndexByName(component_del)[0]
+
+						# Check if index are matching
+						if lib_index == csv_index:
+							# Add to replace dict
+							compare['part_replace'].update({component_add : component_del})
+
+		# Simplify compare report
+		if not compare['part_update']:
+			compare.pop('part_update')
+		if not compare['part_replace']:
+			compare.pop('part_replace')
 
 		print('\n>> ', end='', silent=not(DEBUG_DEEP))
 
@@ -476,37 +492,43 @@ class KicadLibrary(object):
 				# Update library file
 				print('Differences found\n[2]\tUpdating library file\n---', silent=silent)
 
+		# Replace parts
+		if 'part_replace' in compare:
+			for part_add, part_del in compare['part_replace'].items():
+				# Copy old component information
+				component = copy.deepcopy(self.library.getComponentByName(part_del))
+				# Update component with new information
+				component.name = part_add
+				component.definition['name'] = part_add
+				if len(component.comments) == 3:
+					component.comments[1] = component.comments[1].replace(part_del, part_add)
+				# Add new component
+				self.library.addComponent(component)
+				# Delete old component
+				remove = self.library.removeComponent(part_del)
 
-		# Check for potential component updates
-		if ADD_ENABLE and DELETE_ENABLE:
-			part_replace = {}
-			if 'part_add' in compare and 'part_delete' in compare:
-				for component_add in compare['part_add']:
-					for component_del in compare['part_delete']:
-						
-						csv_index = self.GetComponentIndexByName(component_add)[1]
-						lib_index = self.GetComponentIndexByName(component_del)[0]
+				for index, part in enumerate(compare['part_add']):
+					if part == part_add:
+						compare['part_add'].pop(index)
 
-						# Check if index are matching
-						if lib_index == csv_index:
-							print(f'[INFO]\tLibrary component "{component_add}" will be replaced with CSV component "{component_del}" (matching indexes)')
-							part_replace.update({component_add : component_del})
+				for index, part in enumerate(compare['part_delete']):
+					if part == part_del:
+						compare['part_delete'].pop(index)
 
-			# Replace parts
-			if part_replace:
-				print(part_replace)
-				for part_add, part_del in part_replace.items():
-					# Copy old component information
-					component = copy.deepcopy(self.library.getComponentByName(part_del))
-					component.definition['name'] = part_add
-					# Add new component
-					self.library.addComponent(component)
-					# Delete old component
-					remove = self.library.removeComponent(part_del)
+				print(f'\n[INFO]\tLibrary component "{part_del}" was replaced with CSV component "{part_add}" (matching indexes)')
+				updated = True
 
-					# compare['part_add'].pop(part_add)
-					# compare['part_del'].pop(part_del)
-
+		# If any part was replaced: re-parse library and compare again
+		if updated and LIB_SAVE:
+			# Reset update
+			updated = False
+			# Save library
+			self.library.save()
+			# Update library parse
+			self.library = self.LoadLibrary()
+			self.lib_parse = self.ParseLibrary()
+			# Re-run compare
+			compare = self.CompareParse(silent = True)
 				
 		if ADD_ENABLE and 'part_add' in compare:
 			# Process add
@@ -515,7 +537,7 @@ class KicadLibrary(object):
 				self.AddComponentToLibrary(component_name)
 				updated = True
 
-		if DELETE_ENABLE and 'part_del' in compare:
+		if DELETE_ENABLE and 'part_delete' in compare:
 			# Process delete
 			for component_name in compare['part_delete']:
 				print(f'>> Deleting {component_name}')
