@@ -20,9 +20,9 @@ DEBUG_DEEP = False
 # Save library file if set to True
 LIB_SAVE = True
 # Enable add component method if set to True
-ADD_ENABLE = False
+ADD_ENABLE = True
 # Enable delete component method if set to True
-DELETE_ENABLE = False
+DELETE_ENABLE = True
 # Export empty fields to CSV if set to True
 EMPTY_EXPORT = False
 
@@ -302,6 +302,26 @@ class KicadLibrary(object):
 
 		return parse_lib
 
+	def GetComponentIndexByName(self, component_name):
+		lib_index = None
+		csv_index = None
+
+		if self.lib_parse:
+			for index, component in enumerate(self.lib_parse):
+				if component['name'] == component_name:
+					lib_index = index
+					break
+
+		if self.csv_parse:
+			for index, component in enumerate(self.csv_parse):
+				if component['name'] == component_name:
+					csv_index = index
+					break
+
+		# print(f'\n{component_name}\tlib_index, csv_index = {lib_index}, {csv_index}', silent=not(DEBUG_DEEP))
+
+		return lib_index, csv_index
+
 	def GetCommonAndDiffKeys(self, part1, part2):
 		# Find common keys based on first part of each library file
 		common_keys = []
@@ -409,6 +429,7 @@ class KicadLibrary(object):
 				# Part exists in CSV but not in library
 				if ADD_ENABLE:
 					compare['part_add'].append(csv_part['name'])
+					print(f"\n\n[ DEBUG: PART ADD ]\n{csv_part['name']} = {csv_part}", silent=not(DEBUG_DEEP))
 			else:
 				# Remove from the compare list (already processed)
 				lib_parse_remaining_components.pop(part_index)
@@ -420,9 +441,21 @@ class KicadLibrary(object):
 				# Part not found in CSV (to be deleted)
 				if DELETE_ENABLE:
 					compare['part_delete'].append(lib_part['name'])
+					print(f"\n\n[ DEBUG: PART DEL ]\n{lib_part['name']} = {lib_part}", silent=not(DEBUG_DEEP))
 
-		if not compare['part_update']:
-			compare.pop('part_update')
+		
+		# Simplify compare report
+		if 'part_add' in compare:
+			if not compare['part_add']:
+				compare.pop('part_add')
+		if 'part_delete' in compare:
+			if not compare['part_delete']:
+				compare.pop('part_delete')
+		if 'part_update' in compare:
+			if not compare['part_update']:
+				compare.pop('part_update')
+
+		print('\n>> ', end='', silent=not(DEBUG_DEEP))
 
 		return compare
 
@@ -442,15 +475,47 @@ class KicadLibrary(object):
 			else:
 				# Update library file
 				print('Differences found\n[2]\tUpdating library file\n---', silent=silent)
+
+
+		# Check for potential component updates
+		if ADD_ENABLE and DELETE_ENABLE:
+			part_replace = {}
+			if 'part_add' in compare and 'part_delete' in compare:
+				for component_add in compare['part_add']:
+					for component_del in compare['part_delete']:
+						
+						csv_index = self.GetComponentIndexByName(component_add)[1]
+						lib_index = self.GetComponentIndexByName(component_del)[0]
+
+						# Check if index are matching
+						if lib_index == csv_index:
+							print(f'[INFO]\tLibrary component "{component_add}" will be replaced with CSV component "{component_del}" (matching indexes)')
+							part_replace.update({component_add : component_del})
+
+			# Replace parts
+			if part_replace:
+				print(part_replace)
+				for part_add, part_del in part_replace.items():
+					# Copy old component information
+					component = copy.deepcopy(self.library.getComponentByName(part_del))
+					component.definition['name'] = part_add
+					# Add new component
+					self.library.addComponent(component)
+					# Delete old component
+					remove = self.library.removeComponent(part_del)
+
+					# compare['part_add'].pop(part_add)
+					# compare['part_del'].pop(part_del)
+
 				
-		if ADD_ENABLE:
+		if ADD_ENABLE and 'part_add' in compare:
 			# Process add
 			for component_name in compare['part_add']:
 				print(f'>> Adding {component_name}')
 				self.AddComponentToLibrary(component_name)
 				updated = True
 
-		if DELETE_ENABLE:
+		if DELETE_ENABLE and 'part_del' in compare:
 			# Process delete
 			for component_name in compare['part_delete']:
 				print(f'>> Deleting {component_name}')
@@ -482,9 +547,10 @@ class KicadLibrary(object):
 	def AddComponentToLibrary(self, component_name):
 		print('[ERROR]\tAdding component to library is not supported yet')
 
+
 	def RemoveComponentFromLibrary(self, component_name):
 		if LIB_SAVE & False:
-			#self.library.removeComponent(component_name)
+			self.library.removeComponent(component_name)
 			print('Component', component_name, 'was removed from library')
 		else:
 			print('[ERROR]\tComponent could not be removed (protected)')
@@ -725,6 +791,8 @@ if __name__ == '__main__':
 						help = "Export LIB file(s) as CSV file(s)")
 	parser.add_argument("-update_lib", action='store_true',
 						help = "Update LIB file(s) from CSV file(s)")
+	parser.add_argument("-verbose", action='store_true',
+						help = "Display debug verbose")
 	parser.add_argument("-force_write", action='store_true',
 						help = "Overwrite for LIB and CSV files")
 	parser.add_argument("-add_global_field", required = False, default = "",
@@ -734,6 +802,9 @@ if __name__ == '__main__':
 
 	args = parser.parse_args()
 	###
+
+	if args.verbose:
+		DEBUG_DEEP = True
 
 	# Check and store library folder
 	if args.LIB_FOLDER[-1] == '/':
@@ -803,9 +874,9 @@ if __name__ == '__main__':
 					lib_to_csv[lib] = csv
 					break
 
-		# Did not find match
-		if lib not in lib_to_csv:
-			lib_to_csv[lib] = ''
+			# Did not find match
+			if lib not in lib_to_csv:
+				lib_to_csv[lib] = ''
 
 	print(f'lib_files =\t{sorted(lib_files)}\ncsv_files =\t{sorted(csv_files)}\nlib_to_csv =\n', end='', silent=not(DEBUG_DEEP))
 	print(lib_to_csv, silent=not(DEBUG_DEEP))
