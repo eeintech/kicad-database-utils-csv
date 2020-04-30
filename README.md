@@ -1,22 +1,21 @@
 ### kicad-database-utils (Python 3+)
 ##### Manual
 ```
-usage: kicad_library_manager_csv.py [-h] [-lib LIB] [-csv CSV] [-export_csv] [-update_lib] [-force_write] [-add_global_field ADD_GLOBAL_FIELD]
+usage: kicad_library_manager_csv.py [-h] [-export_csv] [-update_lib] [-verbose] [-force_write] [-add_global_field ADD_GLOBAL_FIELD]
                                     [-global_field_default GLOBAL_FIELD_DEFAULT]
-                                    LIB_FOLDER CSV_FOLDER
+                                    LIB_PATH CSV_PATH
 
 KiCad Symbol Library Manager (CSV version)
 
 positional arguments:
-  LIB_FOLDER            KiCad Symbol Library Folder (containing '.lib' files)
-  CSV_FOLDER            KiCad Symbol CSV Folder (containing '.csv' files)
+  LIB_PATH              KiCad Symbol Library Folder (containing '.lib' files)
+  CSV_PATH              KiCad Symbol CSV Folder (containing '.csv' files)
 
 optional arguments:
   -h, --help            show this help message and exit
-  -lib LIB              KiCad Symbol Library File ('.lib')
-  -csv CSV              KiCad Symbol CSV File ('.csv')
   -export_csv           Export LIB file(s) as CSV file(s)
   -update_lib           Update LIB file(s) from CSV file(s)
+  -verbose              Display debug verbose
   -force_write          Overwrite for LIB and CSV files
   -add_global_field ADD_GLOBAL_FIELD
                         Add global field to all components in library
@@ -26,7 +25,7 @@ optional arguments:
 #### Exporting KiCad symbol library to CSV file
 ##### Export single LIB to CSV
 ```
-$ kicad-tools/kicad_library_manager_csv.py library/ -lib Transistors.lib library_csv/ -csv Transistors.csv -export_csv
+$ kicad-tools/kicad_library_manager_csv.py library/Transistors.lib library_csv/Transistors.csv -export_csv
 ```
 Output:
 ```
@@ -53,7 +52,7 @@ Output:
 #### Updating KiCad symbol library from CSV file
 ##### Updating single LIB from CSV
 ```
-$ kicad-tools/kicad_library_manager_csv.py library/ -lib Transistors.lib library_csv/ -csv Transistors.csv -update_lib
+$ kicad-tools/kicad_library_manager_csv.py library/Transistors.lib library_csv/Transistors.csv -update_lib
 ```
 ##### Updating multiple LIB from CSV
 ```
