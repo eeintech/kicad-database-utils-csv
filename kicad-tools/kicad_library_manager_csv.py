@@ -35,14 +35,14 @@ CSV_FOLDER = None
 POSY_OFFSET = -100
 
 # Define mapping between symbol template and library component
-component_to_symbol_mapping = {
-	'name':'SYMBOL_NAME',
-	'reference':'SYMBOL_REFERENCE',
-	'value':'SYMBOL_VALUE',
-	'footprint':'SYMBOL_FOOTPRINT',
-	'description_doc':'SYMBOL_DESCRIPTION',
-	'keywords_doc':'SYMBOL_KEYWORDS',
-	'datasheet_doc':'SYMBOL_DATASHEET',
+symbol_to_component_mapping = {
+	# 'name':'SYMBOL_NAME',
+	'"SYMBOL_REFERENCE"':'reference',
+	'"SYMBOL_VALUE"':'value',
+	'"SYMBOL_FOOTPRINT"':'footprint',
+	'SYMBOL_DESCRIPTION':'description_doc',
+	'SYMBOL_KEYWORDS':'keywords_doc',
+	'SYMBOL_DATASHEET':'datasheet_doc',
 }
 
 # Overload print function for pretty-print of dictionaries
@@ -486,8 +486,18 @@ class KicadLibrary(object):
 
 		return compare
 
+	def UpdateCompare(self):
+		# Save library
+		self.library.save()
+		# Update library parse
+		self.library = self.LoadLibrary()
+		self.lib_parse = self.ParseLibrary()
+		# Re-run compare
+		return self.CompareParse(silent = True)
+
 	def UpdateLibraryFromCSV(self, template = None, silent = False):
-		updated = False
+		global_update = False
+		local_update = False
 
 		print(f'\nLibrary Update\n---\n[1]\t', end='', silent=silent)
 
@@ -527,31 +537,47 @@ class KicadLibrary(object):
 						compare['part_delete'].pop(index)
 
 				print(f'\n[INFO]\tLibrary component "{part_del}" was replaced with CSV component "{part_add}" (matching indexes)')
-				updated = True
+		
+				# Update flags
+				global_update = True
+				local_update = True
 
 		# If any part was replaced: re-parse library and compare again
-		if updated and LIB_SAVE:
-			# Reset update
-			updated = False
-			# Save library
-			self.library.save()
-			# Update library parse
-			self.library = self.LoadLibrary()
-			self.lib_parse = self.ParseLibrary()
+		if local_update and LIB_SAVE:
+			# Reset update flag
+			local_update = False
 			# Re-run compare
-			compare = self.CompareParse(silent = True)
-				
-		if ADD_ENABLE and 'part_add' in compare:
-			# Process add
-			for component_name in compare['part_add']:
-				self.AddComponentToLibrary(component_name, template)
-				updated = True
+			compare = self.UpdateCompare()
 
 		if DELETE_ENABLE and 'part_delete' in compare:
 			# Process delete
 			for component_name in compare['part_delete']:
 				self.RemoveComponentFromLibrary(component_name)
-				updated = True
+				# Update flags
+				global_update = True
+				local_update = True
+
+		# If any part was deleted: re-parse library and compare again
+		if local_update and LIB_SAVE:
+			# Reset update flag
+			local_update = False
+			# Re-run compare
+			compare = self.UpdateCompare()
+
+		if ADD_ENABLE and 'part_add' in compare:
+			# Process add
+			for component_name in compare['part_add']:
+				self.AddComponentToLibrary(component_name, template)
+				# Update flags
+				global_update = True
+				local_update = True
+
+		# If any part was added: re-parse library and compare again
+		if local_update and LIB_SAVE:
+			# Reset update flag
+			local_update = False
+			# Re-run compare
+			compare = self.UpdateCompare()
 
 		# try:
 		# Process update
@@ -561,15 +587,18 @@ class KicadLibrary(object):
 				print(f'\n[ U{count} :\t{component_name} ]')
 				self.UpdateComponentInLibrary(component_name, compare['part_update'][component_name])
 				count += 1
-				updated = True
+				# Update flags
+				global_update = True
+				local_update = True
 		# except:
 		# 	print('[ERROR]\tCould not update library part')
 		# 	pass
 
-		if updated and LIB_SAVE:
+		# Save library if any field were updated
+		if local_update and LIB_SAVE:
 			self.library.save()
 		
-		if updated:
+		if global_update:
 			if LIB_SAVE:
 				print('\n---\nUpdate complete', silent=silent)
 		else:
@@ -585,7 +614,6 @@ class KicadLibrary(object):
 		# Get component data from CSV
 		component_index = self.GetComponentIndexByName(component_name)[1]
 		component_data = self.csv_parse[component_index]
-		print(component_data)
 
 		# Get template symbol data
 		try:
@@ -600,11 +628,32 @@ class KicadLibrary(object):
 			print(f'[ERROR]\tMore than one component template in file {template}')
 			return
 		
-		symbol_template = template_library.components[0]
-		print(symbol_template.fields)
+		symbol_template = copy.deepcopy(template_library.components[0])
 
-		print(component_to_symbol_mapping)
+		symbol_template.name = component_data['name']
+		symbol_template.definition['name'] = component_data['name']
+		symbol_template.comments[1] = symbol_template.comments[1].replace('SYMBOL_COMMENT',symbol_template.name)
 
+		# Scroll through fields
+		symbol_keys = ['name', 'reference']
+		for field in symbol_template.fields:
+			print(field)
+			for symbol_key in symbol_keys:
+				if symbol_key in field.keys():
+					key = field[symbol_key]
+					field[symbol_key] = component_data[symbol_to_component_mapping[key]]
+
+		for key, value in symbol_template.documentation.items():
+			if value in symbol_to_component_mapping.keys():
+				symbol_template.documentation[key] = component_data[symbol_to_component_mapping[value]]
+
+		# print(symbol_template.name)
+		# print(symbol_template.comments)
+		# print(symbol_template.fields)
+		# print(symbol_template.documentation)
+
+		self.library.addComponent(symbol_template)
+		# self.library.save()
 
 	def RemoveComponentFromLibrary(self, component_name):
 		if LIB_SAVE:
