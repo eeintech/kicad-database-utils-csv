@@ -34,6 +34,17 @@ CSV_FOLDER = None
 # New component field offset
 POSY_OFFSET = -100
 
+# Define mapping between symbol template and library component
+component_to_symbol_mapping = {
+	'name':'SYMBOL_NAME',
+	'reference':'SYMBOL_REFERENCE',
+	'value':'SYMBOL_VALUE',
+	'footprint':'SYMBOL_FOOTPRINT',
+	'description_doc':'SYMBOL_DESCRIPTION',
+	'keywords_doc':'SYMBOL_KEYWORDS',
+	'datasheet_doc':'SYMBOL_DATASHEET',
+}
+
 # Overload print function for pretty-print of dictionaries
 def print(*args, **kwargs):
 	# Check if silent=True is set
@@ -533,14 +544,12 @@ class KicadLibrary(object):
 		if ADD_ENABLE and 'part_add' in compare:
 			# Process add
 			for component_name in compare['part_add']:
-				print(f'>> Adding {component_name}')
 				self.AddComponentToLibrary(component_name, template)
 				updated = True
 
 		if DELETE_ENABLE and 'part_delete' in compare:
 			# Process delete
 			for component_name in compare['part_delete']:
-				print(f'>> Deleting {component_name}')
 				self.RemoveComponentFromLibrary(component_name)
 				updated = True
 
@@ -573,11 +582,34 @@ class KicadLibrary(object):
 
 		print(f'[INFO]\tAdding {component_name} to library using {template} file')
 
+		# Get component data from CSV
+		component_index = self.GetComponentIndexByName(component_name)[1]
+		component_data = self.csv_parse[component_index]
+		print(component_data)
+
+		# Get template symbol data
+		try:
+			# Load library using schlib module
+			template_library = SchLib(template)
+		except:
+			template_library = None
+			print(f'[ERROR]\tCannot read template library file {template}')
+			return
+
+		if len(template_library.components) > 1:
+			print(f'[ERROR]\tMore than one component template in file {template}')
+			return
+		
+		symbol_template = template_library.components[0]
+		print(symbol_template.fields)
+
+		print(component_to_symbol_mapping)
+
 
 	def RemoveComponentFromLibrary(self, component_name):
 		if LIB_SAVE:
 			self.library.removeComponent(component_name)
-			print('Component', component_name, 'was removed from library')
+			print('[INFO]\tComponent', component_name, 'was removed from library')
 		else:
 			print('[ERROR]\tComponent could not be removed (protected)')
 
