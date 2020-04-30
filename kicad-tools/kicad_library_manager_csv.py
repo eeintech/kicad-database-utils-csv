@@ -429,7 +429,7 @@ class KicadLibrary(object):
 				# Part exists in CSV but not in library
 				if ADD_ENABLE:
 					compare['part_add'].append(csv_part['name'])
-					print(f"\n\n[ DEBUG: PART ADD ]\n{csv_part['name']} = {csv_part}", silent=not(DEBUG_DEEP))
+					print(f"\n\n[ DEBUG: PART ADD ]\n{csv_part['name']} = {csv_part}", silent=True)
 			else:
 				# Remove from the compare list (already processed)
 				lib_parse_remaining_components.pop(part_index)
@@ -441,7 +441,7 @@ class KicadLibrary(object):
 				# Part not found in CSV (to be deleted)
 				if DELETE_ENABLE:
 					compare['part_delete'].append(lib_part['name'])
-					print(f"\n\n[ DEBUG: PART DEL ]\n{lib_part['name']} = {lib_part}", silent=not(DEBUG_DEEP))
+					print(f"\n\n[ DEBUG: PART DEL ]\n{lib_part['name']} = {lib_part}", silent=True)
 
 		
 		# Simplify compare report
@@ -571,7 +571,7 @@ class KicadLibrary(object):
 
 
 	def RemoveComponentFromLibrary(self, component_name):
-		if LIB_SAVE & False:
+		if LIB_SAVE:
 			self.library.removeComponent(component_name)
 			print('Component', component_name, 'was removed from library')
 		else:
@@ -801,14 +801,14 @@ class KicadLibrary(object):
 if __name__ == '__main__':
 	### ARGPARSE
 	parser = argparse.ArgumentParser(description = """KiCad Symbol Library Manager (CSV version)""")
-	parser.add_argument("LIB_FOLDER",
+	parser.add_argument("LIB_PATH",
 						help = "KiCad Symbol Library Folder (containing '.lib' files)")
-	parser.add_argument("-lib", required = False, default = "",
-						help = "KiCad Symbol Library File ('.lib')")
-	parser.add_argument("CSV_FOLDER",
+	# parser.add_argument("-lib", required = False, default = "",
+	# 					help = "KiCad Symbol Library File ('.lib')")
+	parser.add_argument("CSV_PATH",
 						help = "KiCad Symbol CSV Folder (containing '.csv' files)")
-	parser.add_argument("-csv", required = False, default = "",
-						help = "KiCad Symbol CSV File ('.csv')")
+	# parser.add_argument("-csv", required = False, default = "",
+	# 					help = "KiCad Symbol CSV File ('.csv')")
 	parser.add_argument("-export_csv", action='store_true',
 						help = "Export LIB file(s) as CSV file(s)")
 	parser.add_argument("-update_lib", action='store_true',
@@ -828,47 +828,71 @@ if __name__ == '__main__':
 	if args.verbose:
 		DEBUG_DEEP = True
 
-	# Check and store library folder
-	if args.LIB_FOLDER[-1] == '/':
-		LIB_FOLDER = args.LIB_FOLDER
-	else:
-		LIB_FOLDER = args.LIB_FOLDER + '/'
-
-	# Check and store CSV folder
-	if args.CSV_FOLDER[-1] == '/':
-		CSV_FOLDER = args.CSV_FOLDER
-	else:
-		CSV_FOLDER = args.CSV_FOLDER + '/'
-	
-	print(f'lib_folder =\t{LIB_FOLDER}\ncsv_folder =\t{CSV_FOLDER}', silent=not(DEBUG_DEEP))	
-
+	LIB_FOLDER = None
+	CSV_FOLDER = None
 	lib_files = []
 	csv_files = []
-	lib_to_csv = {}
+	is_file = False
 
-	if args.lib:
-		# Append to library files
-		lib_files.append(args.lib)
+	# Check and store library folder
+	if args.LIB_PATH[-1] == '/':
+		# Path = Folder
+		LIB_FOLDER = args.LIB_PATH
 	else:
-		# Find all library files in folder
+		if args.LIB_PATH[-4:] == '.lib':
+			try:
+				# Path leads to file
+				lib_files.append(args.LIB_PATH.split('/')[-1])
+			except:
+				# Path = File
+				lib_files.append(args.LIB_PATH)
+			
+			LIB_FOLDER = os.path.dirname(args.LIB_PATH) + '/'
+			is_file = True
+		else:
+			# Is not lib file, append slash (= folder)
+			LIB_FOLDER = args.LIB_PATH + '/'
+
+	# Check and store CSV folder
+	if args.CSV_PATH[-1] == '/':
+		# Path = Folder
+		CSV_FOLDER = args.CSV_PATH
+	else:
+		if args.CSV_PATH[-4:] == '.csv':
+			try:
+				# Path leads to file
+				csv_files.append(args.CSV_PATH.split('/')[-1])
+			except:
+				# Path = File
+				csv_files.append(args.CSV_PATH)
+
+			CSV_FOLDER = os.path.dirname(args.CSV_PATH) + '/'
+			is_file = True
+		else:
+			# Is not lib file, append slash (= folder)
+			CSV_FOLDER = args.CSV_PATH + '/'
+
+	# Find all library files in folder
+	print(f'lib_folder =\t{LIB_FOLDER}', silent=not(DEBUG_DEEP))
+	if LIB_FOLDER and not is_file:
 		for dirpath, folders, files in os.walk(LIB_FOLDER):
 			for file in files:
 				if '.lib' in file and file not in lib_files:
 					lib_files.append(file)
-			
-	if args.csv:
-		# Append to CSV files
-		csv_files.append(args.csv)
-	else:
-		# Find all CSV files in folder
+	
+	# Find all CSV files in folder
+	print(f'csv_folder =\t{CSV_FOLDER}', silent=not(DEBUG_DEEP))
+	if CSV_FOLDER and not is_file:
 		for dirpath, folders, files in os.walk(CSV_FOLDER):
 			for file in files:
 				if '.csv' in file and file not in csv_files:
 					csv_files.append(file)
 
+	lib_to_csv = {}
+
 	# If either lib file or csv file is specified by user
 	# Require unique match
-	if args.lib or args.csv:
+	if is_file:
 		if (len(lib_files) + len(csv_files)) > 2:
 			print(f'[ERROR]\tLIB and CSV files could not be matched', silent=False)
 			print(f'\t\tMake sure both -lib and -csv files are correct or that folders contain unique file', silent=False)
