@@ -475,7 +475,7 @@ class KicadLibrary(object):
 
 		return compare
 
-	def UpdateLibraryFromCSV(self, silent = False):
+	def UpdateLibraryFromCSV(self, template = None, silent = False):
 		updated = False
 
 		print(f'\nLibrary Update\n---\n[1]\t', end='', silent=silent)
@@ -534,7 +534,7 @@ class KicadLibrary(object):
 			# Process add
 			for component_name in compare['part_add']:
 				print(f'>> Adding {component_name}')
-				self.AddComponentToLibrary(component_name)
+				self.AddComponentToLibrary(component_name, template)
 				updated = True
 
 		if DELETE_ENABLE and 'part_delete' in compare:
@@ -566,8 +566,12 @@ class KicadLibrary(object):
 		else:
 			print('\tUpdate aborted', silent=silent)
 
-	def AddComponentToLibrary(self, component_name):
-		print('[ERROR]\tAdding component to library is not supported yet')
+	def AddComponentToLibrary(self, component_name, template):
+		if not template:
+			print('[ERROR]\tComponent not added: missing template file')
+			return
+
+		print(f'[INFO]\tAdding {component_name} to library using {template} file')
 
 
 	def RemoveComponentFromLibrary(self, component_name):
@@ -821,6 +825,8 @@ if __name__ == '__main__':
 						help = "Add global field to all components in library")
 	parser.add_argument("-global_field_default", required = False, default = "",
 						help = "Default value for global field")
+	parser.add_argument("-template", required = False, default = "",
+					help = "Path to symbol template file (.lib)")
 
 	args = parser.parse_args()
 	###
@@ -828,8 +834,6 @@ if __name__ == '__main__':
 	if args.verbose:
 		DEBUG_DEEP = True
 
-	LIB_FOLDER = None
-	CSV_FOLDER = None
 	lib_files = []
 	csv_files = []
 	is_file = False
@@ -927,6 +931,10 @@ if __name__ == '__main__':
 	print(f'lib_files =\t{sorted(lib_files)}\ncsv_files =\t{sorted(csv_files)}\nlib_to_csv =\n', end='', silent=not(DEBUG_DEEP))
 	print(lib_to_csv, silent=not(DEBUG_DEEP))
 
+	# Map template file to add components
+	if args.template:
+		symbol_template_file = args.template
+
 	for lib, csv in lib_to_csv.items():
 		try:
 			lib_name = lib.split(".")[0]
@@ -981,5 +989,5 @@ if __name__ == '__main__':
 					if args.global_field_default:
 						print(f'[ERROR]\tMissing -add_global_field argument', silent=not(VERBOSE))
 
-				klib.UpdateLibraryFromCSV(silent = not(VERBOSE))
+				klib.UpdateLibraryFromCSV(template = symbol_template_file, silent = not(VERBOSE))
 				# print(klib.fieldname_lookup_table, silent=not(DEBUG_DEEP))
