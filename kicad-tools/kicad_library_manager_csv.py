@@ -411,8 +411,15 @@ class KicadLibrary(object):
 									compare['part_update'][csv_part['name']] = {}
 								compare['part_update'][csv_part['name']].update({'field_delete': {key : lib_part[key]}})
 
-					# Add missing library fields
+					
+					# REMOVE EMPTY KEYS FROM DIFF (DO NOT DELETE THOSE)
+					diff_keys_updated = []
 					for key in diff_keys:
+						if not 'empty' in key:
+							diff_keys_updated.append(key)
+
+					# Add missing library fields
+					for key in diff_keys_updated:
 						# Check csv field contains new fields and add to compare
 						if key not in lib_part and key in csv_part:
 							if len(csv_part[key]) > 0:
@@ -1015,6 +1022,8 @@ if __name__ == '__main__':
 	# Map template file to add components
 	if args.template:
 		symbol_template_file = args.template
+	else:
+		symbol_template_file = None
 
 	for lib, csv in lib_to_csv.items():
 		try:
