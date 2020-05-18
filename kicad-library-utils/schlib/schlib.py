@@ -454,9 +454,6 @@ class SchLib(object):
 
     def removeComponent(self, name):
         component = self.getComponentByName(name)
-        # import json
-        # print(f'\ncomponent\n---\nname = {component.name}\ndocumentation = {component.documentation}\nfields = {json.dumps(component.fields, indent = 4, sort_keys = True)}\ndraw = {json.dumps(component.draw, indent = 4, sort_keys = True)}\n')
-        
         for alias in component.aliases.keys():
             self.documentation.remove(alias)
         self.documentation.remove(name)
