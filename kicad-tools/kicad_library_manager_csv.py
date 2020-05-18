@@ -12,6 +12,10 @@ except:
 	sys.path.append('kicad-library-utils/schlib')
 	from schlib import SchLib
 
+### VERSION
+__version_info__ = ('0', '1', '0')
+__version__ = '.'.join(__version_info__)
+
 ### DEBUG ONLY
 # Verbose if set to True
 VERBOSE = True
@@ -47,7 +51,7 @@ symbol_to_component_mapping = {
 
 # Overload print function for pretty-print of dictionaries
 def print(*args, **kwargs):
-	# Check if silent=True is set
+	# Check if silent is set
 	try:
 		silent = kwargs.pop('silent')
 	except:
@@ -94,7 +98,7 @@ class KicadLibrary(object):
 				print(f'(LIB)\tParsing {self.lib_file} file', end='', silent=silent)
 				self.lib_parse = self.ParseLibrary()
 				print(f' ({len(self.lib_parse)} components)', silent=silent)
-				# print(self.lib_parse[0], silent=not(DEBUG_DEEP))
+				# print(self.lib_parse, silent=not(DEBUG_DEEP))
 
 		# Process CSV file
 		if self.lib_parse and self.csv_file:
@@ -232,7 +236,6 @@ class KicadLibrary(object):
 		for word in new_field_name:
 			fieldname_restored += word
 
-		# print(fieldname_restored)
 		return fieldname_restored
 
 	def ParseComponent(self, component):
@@ -447,7 +450,7 @@ class KicadLibrary(object):
 				# Part exists in CSV but not in library
 				if ADD_ENABLE:
 					compare['part_add'].append(csv_part['name'])
-					print(f"\n\n[ DEBUG: PART ADD ]\n{csv_part['name']} = {csv_part}", silent=True)
+					print(f'\n\n[ DEBUG: PART ADD ]\n{csv_part["name"]} = {csv_part}', silent=True)
 			else:
 				# Remove from the compare list (already processed)
 				lib_parse_remaining_components.pop(part_index)
@@ -459,7 +462,7 @@ class KicadLibrary(object):
 				# Part not found in CSV (to be deleted)
 				if DELETE_ENABLE:
 					compare['part_delete'].append(lib_part['name'])
-					print(f"\n\n[ DEBUG: PART DEL ]\n{lib_part['name']} = {lib_part}", silent=True)
+					print(f'\n\n[ DEBUG: PART DEL ]\n{lib_part["name"]} = {lib_part}', silent=True)
 
 		
 		# Simplify compare report
@@ -654,13 +657,7 @@ class KicadLibrary(object):
 			if value in symbol_to_component_mapping.keys():
 				symbol_template.documentation[key] = component_data[symbol_to_component_mapping[value]]
 
-		# print(symbol_template.name)
-		# print(symbol_template.comments)
-		# print(symbol_template.fields)
-		# print(symbol_template.documentation)
-
 		self.library.addComponent(symbol_template)
-		# self.library.save()
 
 	def RemoveComponentFromLibrary(self, component_name):
 		if LIB_SAVE:
@@ -704,8 +701,6 @@ class KicadLibrary(object):
 						fieldname = (field['fieldname'] + '.')[:-1]
 						fieldname = self.CleanFieldname(fieldname)
 
-					# print(f'fieldname = {fieldname}\tfield[fieldname] = {field["fieldname"]}')
-
 					# Update field values
 					if fieldname in field_data['field_update'].keys():
 						old_value = component.fields[index]["name"]
@@ -739,7 +734,7 @@ class KicadLibrary(object):
 						if fieldname == key:
 							field_index_to_delete = index
 							break
-						elif fieldname == "":
+						elif fieldname == '':
 							field_index_to_delete = index
 							break
 
@@ -748,7 +743,6 @@ class KicadLibrary(object):
 					# for index in range(field_index_to_delete + 1, len(component.fields)):
 					# 	component.fields[index]['posy'] = str(float(component.fields[index]['posy']) + POSY_OFFSET)
 					# Remove field
-					# print(component.fields[field_index_to_delete])
 					component.fields.pop(field_index_to_delete)
 					# print('\t> Successfully removed')
 				except:
@@ -779,12 +773,10 @@ class KicadLibrary(object):
 						# Add double-quotes
 						new_field['fieldname'] = '"' + new_field['fieldname'] + '"'
 
-						# print(f'New Field Name = {new_field["fieldname"]}')
-
 					# Find user fields Y positions
 					posy = []
 					for posy_idx in range(2, len(component.fields)):
-						if component.fields[posy_idx]['name'] != "":
+						if component.fields[posy_idx]['name'] != '':
 							posy.append(int(component.fields[posy_idx]['posy']))
 
 					# Set the new field below the lowest one
@@ -856,7 +848,7 @@ class KicadLibrary(object):
 			# Double-quotes (quotechar) are doubled. It does not look "pretty" when
 			# CSV is opened in text view but is functional to add fields with no value.
 			# It also handles well the double-quotes used for the "inch" unit.
-			csv_writer = csv_tool.writer(csvfile)#, quoting=csv_tool.QUOTE_NONE, escapechar='\\')
+			csv_writer = csv_tool.writer(csvfile)
 			row_size = len(mapping)
 
 			# Write header
@@ -892,33 +884,34 @@ class KicadLibrary(object):
 # MAIN
 if __name__ == '__main__':
 	### ARGPARSE
-	parser = argparse.ArgumentParser(description = """KiCad Symbol Library Manager (CSV version)""")
-	parser.add_argument("LIB_PATH",
-						help = "KiCad Symbol Library Folder (containing '.lib' files)")
-	# parser.add_argument("-lib", required = False, default = "",
-	# 					help = "KiCad Symbol Library File ('.lib')")
-	parser.add_argument("CSV_PATH",
-						help = "KiCad Symbol CSV Folder (containing '.csv' files)")
-	# parser.add_argument("-csv", required = False, default = "",
-	# 					help = "KiCad Symbol CSV File ('.csv')")
-	parser.add_argument("-export_csv", action='store_true',
-						help = "Export LIB file(s) as CSV file(s)")
-	parser.add_argument("-update_lib", action='store_true',
-						help = "Update LIB file(s) from CSV file(s)")
-	parser.add_argument("-verbose", action='store_true',
-						help = "Display debug verbose")
-	parser.add_argument("-force_write", action='store_true',
-						help = "Overwrite for LIB and CSV files")
-	parser.add_argument("-add_global_field", required = False, default = "",
-						help = "Add global field to all components in library")
-	parser.add_argument("-global_field_default", required = False, default = "",
-						help = "Default value for global field")
-	parser.add_argument("-template", required = False, default = "",
-					help = "Path to symbol template file (.lib)")
+	parser = argparse.ArgumentParser(description = """KiCad Symbol Library Manager (CSV)""", add_help=False)
+	parser.add_argument('-h', '--help', action='help',
+						help = 'Show this help message and exit')
+	parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + __version__,
+						help = 'Show program\'s version number and exit')
+	parser.add_argument('-d', '--debug', action='store_true',
+						help = 'Display debug verbose')
+	parser.add_argument('LIB_PATH',
+						help = 'KiCad symbol library folder or file (".lib" files)')
+	parser.add_argument('CSV_PATH',
+						help = 'KiCad symbol CSV folder or file (".csv" files)')
+	parser.add_argument('-e', '--export_csv', action='store_true',
+						help = 'Export LIB file(s) as CSV file(s)')
+	parser.add_argument('-u', '--update_lib', action='store_true',
+						help = 'Update LIB file(s) from CSV file(s)')
+	parser.add_argument('-f', '--force_write', action='store_true',
+						help = 'Overwrite for LIB and CSV files')
+	parser.add_argument('-a', '--add_global_field', required = False, default = '',
+						help = 'Add global field to all components in library', metavar=('GLOBAL_FIELD'))
+	parser.add_argument('-g', '--global_field_default', required = False, default = '',
+						help = 'Default value for global field', metavar=('DEFAULT_VALUE'))
+	parser.add_argument('-t', '--template', required = False, default = '',
+					help = 'Path to symbol template file (.lib) used to add component')
 
 	args = parser.parse_args()
 	###
 
+	# Enable debug
 	if args.verbose:
 		DEBUG_DEEP = True
 
@@ -1027,7 +1020,7 @@ if __name__ == '__main__':
 
 	for lib, csv in lib_to_csv.items():
 		try:
-			lib_name = lib.split(".")[0]
+			lib_name = lib.split('.')[0]
 		except:
 			lib_name = lib
 
@@ -1044,7 +1037,6 @@ if __name__ == '__main__':
 			if not klib.csv_parse:
 				klib.ExportLibraryToCSV()
 			else:
-				# print(klib.csv_parse[33], silent=not(DEBUG_DEEP))
 				if args.force_write:
 					klib.ExportLibraryToCSV()
 				else:
@@ -1053,8 +1045,6 @@ if __name__ == '__main__':
 		# Update library from CSV
 		if not args.export_csv and args.update_lib:
 			if klib.lib_parse and klib.csv_parse:
-				# print(klib.lib_parse[0], silent=not(DEBUG_DEEP))
-				# print(klib.csv_parse[0], silent=not(DEBUG_DEEP))
 				
 				if args.add_global_field:
 					global_field = args.add_global_field.lower()
@@ -1080,4 +1070,3 @@ if __name__ == '__main__':
 						print(f'[ERROR]\tMissing -add_global_field argument', silent=not(VERBOSE))
 
 				klib.UpdateLibraryFromCSV(template = symbol_template_file, silent = not(VERBOSE))
-				# print(klib.fieldname_lookup_table, silent=not(DEBUG_DEEP))
