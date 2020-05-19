@@ -1,4 +1,19 @@
-## kicad-database-utils (Python 3+)
+## kicad-database-utils-csv
+After putting on my librarian hat and needing to update multiple components at once, this tool came to mind.
+Instead of clicking multiple times on each component property and manually update them, I thought I could make my life a bit easier and convert symbol library (.lib) files to the CSV format, which can be easily manipulated.
+After the CSV file is updated, this tool pushes all the changes to the library file, without the need to open KiCad.
+
+Here are some examples this tool can be used for:
+* Updating all the component footprint names, in the case you've decided to reformat the structure of your footprint library
+* Update all the datasheet links of a vendor who's decided to change their web location
+* Update the references and/or keywords for a specific type of component
+* Add or remove user fields for all or a specific type of component
+* Remove obsolete or add new components quickly
+* Any other global symbol library updates you're thinking of.
+
+This tool does not have any dependency other than the [schlib library parsing tool](https://github.com/KiCad/kicad-library-utils/tree/master/schlib) provided by the KiCad team (already included). Be sure to run it with Python 3+.
+And please let me know if you run into any issue.
+
 #### Manual
 ```
 $ kicad-tools/kicad_library_manager_csv.py --help
