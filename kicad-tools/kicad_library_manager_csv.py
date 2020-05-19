@@ -362,7 +362,7 @@ class KicadLibrary(object):
 		if not (len(self.csv_parse) > 0):
 			print(f'[ERROR]\tNo part found in library and CSV files')
 			return compare
-		print(f'Processing compare on {max(len(self.csv_parse), len(self.lib_parse))} parts... ', end='', silent = silent)
+		print(f'Processing compare on {max(len(self.csv_parse), len(self.lib_parse))} components... ', end='', silent = silent)
 
 		# Copy lib_parse
 		lib_parse_remaining_components = copy.deepcopy(self.lib_parse)
@@ -891,9 +891,9 @@ if __name__ == '__main__':
 	parser.add_argument('-d', '--debug', action='store_true',
 						help = 'Display debug verbose')
 	parser.add_argument('LIB_PATH',
-						help = 'KiCad symbol library folder or file (".lib" files)')
+						help = 'KiCad symbol library folder or file (.lib files)')
 	parser.add_argument('CSV_PATH',
-						help = 'KiCad symbol CSV folder or file (".csv" files)')
+						help = 'KiCad symbol CSV folder or file (.csv files)')
 	parser.add_argument('-e', '--export_csv', action='store_true',
 						help = 'Export LIB file(s) as CSV file(s)')
 	parser.add_argument('-u', '--update_lib', action='store_true',
