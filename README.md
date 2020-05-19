@@ -1,13 +1,14 @@
 ## kicad-database-utils (Python 3+)
 #### Manual
 ```
+$ kicad-tools/kicad_library_manager_csv.py --help
 usage: kicad_library_manager_csv.py [-h] [-v] [-d] [-e] [-u] [-f] [-t TEMPLATE] [-a GLOBAL_FIELD] [-g DEFAULT_VALUE] LIB_PATH CSV_PATH
 
 KiCad Symbol Library Manager (CSV)
 
 positional arguments:
-  LIB_PATH              KiCad symbol library folder or file (".lib" files)
-  CSV_PATH              KiCad symbol CSV folder or file (".csv" files)
+  LIB_PATH              KiCad symbol library folder or file (.lib files)
+  CSV_PATH              KiCad symbol CSV folder or file (.csv files)
 
 optional arguments:
   -h, --help            Show this help message and exit
@@ -108,10 +109,10 @@ Update complete
 $ kicad-tools/kicad_library_manager_csv.py library/ library_csv/ --update_lib
 ```
 ##### Adding components to library
-Both ".lib" and ".dcm" files located in the `templates` folder are used to add a part in the library. You'll need to refer to the template file ".lib" to be able to add components.
+Both ".lib" and ".dcm" files located in the `templates` folder are used to add a component in the library. You'll need to refer to the template file ".lib" to be able to add components.
 
 Note that the template file do not have a pre-defined symbol drawing, you'll have to draw it yourself.
-If you intend to re-use a symbol drawing, it is maybe easier to copy-paste the part in KiCad before running an update on the new part.
+If you intend to re-use a symbol drawing, it is maybe easier to copy-paste the component in KiCad before running an update on the new component.
 
 Example 1: Templates file is missing, components aren't added to library
 ```
