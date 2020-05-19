@@ -147,7 +147,7 @@ class KicadLibrary(object):
 			# Check if file exists
 			if not os.path.exists(self.csv_file):
 				print(f'[ERROR]\tFile {self.csv_file} does not exist')
-				print(f'\tUse "-export_csv" argument to export CSV file')
+				print(f'\tUse "--export_csv" argument to export CSV file')
 				return False
 
 			# Check if valid CSV file
@@ -616,7 +616,7 @@ class KicadLibrary(object):
 
 	def AddComponentToLibrary(self, component_name, template):
 		if not template:
-			print('[ERROR]\tComponent not added: missing template file')
+			print(f'[ERROR]\tComponent {component_name} could not be added: missing template file')
 			return
 
 		print(f'[INFO]\tAdding {component_name} to library using {template} file')
@@ -647,7 +647,6 @@ class KicadLibrary(object):
 		# Scroll through fields
 		symbol_keys = ['name', 'reference']
 		for field in symbol_template.fields:
-			print(field)
 			for symbol_key in symbol_keys:
 				if symbol_key in field.keys():
 					key = field[symbol_key]
@@ -901,18 +900,18 @@ if __name__ == '__main__':
 						help = 'Update LIB file(s) from CSV file(s)')
 	parser.add_argument('-f', '--force_write', action='store_true',
 						help = 'Overwrite for LIB and CSV files')
+	parser.add_argument('-t', '--template', required = False, default = '',
+					help = 'Path to symbol template file (.lib) used to add component')
 	parser.add_argument('-a', '--add_global_field', required = False, default = '',
 						help = 'Add global field to all components in library', metavar=('GLOBAL_FIELD'))
 	parser.add_argument('-g', '--global_field_default', required = False, default = '',
 						help = 'Default value for global field', metavar=('DEFAULT_VALUE'))
-	parser.add_argument('-t', '--template', required = False, default = '',
-					help = 'Path to symbol template file (.lib) used to add component')
 
 	args = parser.parse_args()
 	###
 
 	# Enable debug
-	if args.verbose:
+	if args.debug:
 		DEBUG_DEEP = True
 
 	lib_files = []
