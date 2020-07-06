@@ -4,13 +4,9 @@ import csv as csv_tool
 import builtins
 
 # Import KiCad schematic library utils
-try:
-	# When library is imported
-	from schlib import SchLib
-except:
-	# When this file is executed directly from root folder
-	sys.path.append('kicad-library-utils/schlib')
-	from schlib import SchLib
+FILE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(FILE_DIR + '/kicad-library-utils')
+from schlib.schlib import SchLib
 
 ### VERSION
 __version_info__ = ('0', '1', '0')
