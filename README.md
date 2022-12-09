@@ -1,4 +1,7 @@
 ## kicad-database-utils-csv
+
+> :warning: This tool only supports KiCad V5 and older versions.
+
 After putting on my librarian hat and needing to update multiple components at once, this tool came to mind.
 Instead of clicking multiple times on each component property and manually update them, I thought I could make my life a bit easier and convert symbol library (.lib) files to the CSV format, which can be easily manipulated.
 After the CSV file is updated, this tool pushes all the changes to the library file, without the need to open KiCad.
