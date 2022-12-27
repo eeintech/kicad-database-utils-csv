@@ -646,7 +646,10 @@ class KicadLibrary(object):
 			for symbol_key in symbol_keys:
 				if symbol_key in field.keys():
 					key = field[symbol_key]
-					field[symbol_key] = component_data[symbol_to_component_mapping[key]]
+					try:
+						field[symbol_key] = component_data[symbol_to_component_mapping[key]]
+					except KeyError:
+						field[symbol_key] = ""
 
 		for key, value in symbol_template.documentation.items():
 			if value in symbol_to_component_mapping.keys():
@@ -839,7 +842,7 @@ class KicadLibrary(object):
 						mapping[key] = key_count
 						key_count += 1					
 
-		with open(csv_file, 'w') as csvfile:
+		with open(csv_file, 'w', newline='') as csvfile:
 			# Double-quotes (quotechar) are doubled. It does not look "pretty" when
 			# CSV is opened in text view but is functional to add fields with no value.
 			# It also handles well the double-quotes used for the "inch" unit.
